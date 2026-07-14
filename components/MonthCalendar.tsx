@@ -12,7 +12,8 @@ import {
   startOfWeek,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { formatRange } from "@/lib/format";
 import type { BlockedPeriod, Reservation } from "@/lib/types";
 
 const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -33,8 +34,23 @@ function weekendFor(day: Date) {
   };
 }
 
-function overlaps(iso: string, start: string, end: string) {
+function overlapsDay(iso: string, start: string, end: string) {
   return iso >= start && iso <= end;
+}
+
+function overlapsRange(startA: string, endA: string, startB: string, endB: string) {
+  return startA <= endB && endA >= startB;
+}
+
+function reservationTone(status: Reservation["status"]) {
+  if (status === "PRE_RESERVA") return "pre";
+  if (status === "REALIZADA") return "done";
+  return "confirmed";
+}
+
+function monthLabel(date: Date) {
+  const text = format(date, "MMMM 'de' yyyy", { locale: ptBR });
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function MonthCalendar({
@@ -43,127 +59,156 @@ export function MonthCalendar({
   selectedStart,
   selectedEnd,
   onSelect,
+  onNewReservation,
 }: {
   reservations: Reservation[];
   blockedPeriods: BlockedPeriod[];
   selectedStart?: string;
   selectedEnd?: string;
   onSelect?: (selection: CalendarSelection) => void;
+  onNewReservation?: () => void;
 }) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
 
-  const cells = useMemo(() => {
+  const weeks = useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
-    const days: Date[] = [];
-    for (let day = start; day <= end; day = addDays(day, 1)) days.push(day);
-    return days;
+    const rows: Date[][] = [];
+    let cursor = start;
+
+    while (cursor <= end) {
+      rows.push(Array.from({ length: 7 }, (_, index) => addDays(cursor, index)));
+      cursor = addDays(cursor, 7);
+    }
+
+    return rows;
   }, [month]);
 
   return (
-    <div className="calendar-shell">
-      <div className="calendar-toolbar">
-        <div>
-          <span className="eyebrow">Agenda mensal</span>
-          <h3>{format(month, "MMMM 'de' yyyy", { locale: ptBR })}</h3>
-        </div>
-        <div className="calendar-nav">
-          <button
-            className="icon-control"
-            onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-            aria-label="Mês anterior"
-            type="button"
-          >
+    <div className="prototype-calendar">
+      <div className="prototype-calendar-toolbar">
+        <div className="prototype-calendar-controls">
+          <button className="calendar-today-button" type="button" onClick={() => setMonth(startOfMonth(new Date()))}>
+            Hoje
+          </button>
+          <button className="calendar-arrow" type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Mês anterior">
             <ChevronLeft />
           </button>
-          <button
-            className="icon-control"
-            onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-            aria-label="Próximo mês"
-            type="button"
-          >
+          <button className="calendar-arrow" type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Próximo mês">
             <ChevronRight />
           </button>
         </div>
+
+        <h2 className="prototype-month-title">{monthLabel(month)}</h2>
+
+        <button className="prototype-new-button" type="button" onClick={onNewReservation}>
+          <Plus /> Nova reserva
+        </button>
       </div>
 
-      <div className="calendar-legend">
-        <span><i className="legend-dot free" />Livre</span>
-        <span><i className="legend-dot pre" />Pré-reserva</span>
-        <span><i className="legend-dot confirmed" />Confirmada</span>
-        <span><i className="legend-dot blocked" />Bloqueada</span>
-      </div>
-
-      <div className="calendar-weekdays">
+      <div className="prototype-weekdays">
         {weekdays.map((day, index) => (
           <div key={day} className={index >= 4 ? "weekend-heading" : ""}>{day}</div>
         ))}
       </div>
 
-      <div className="calendar-grid">
-        {cells.map((day) => {
-          const iso = format(day, "yyyy-MM-dd");
-          const reservation = reservations.find(
-            (item) => item.status !== "CANCELADA" && overlaps(iso, item.start_date, item.end_date)
+      <div className="prototype-calendar-body">
+        {weeks.map((week) => {
+          const weekStart = format(week[0], "yyyy-MM-dd");
+          const weekEnd = format(week[6], "yyyy-MM-dd");
+          const weekReservations = reservations.filter(
+            (item) => item.status !== "CANCELADA" && overlapsRange(item.start_date, item.end_date, weekStart, weekEnd)
           );
-          const block = blockedPeriods.find((item) => overlaps(iso, item.start_date, item.end_date));
-          const isWeekendDay = [5, 6, 0].includes(day.getDay());
-          const isSelected = Boolean(selectedStart && selectedEnd && overlaps(iso, selectedStart, selectedEnd));
-          const weekend = weekendFor(day);
+          const weekBlocks = blockedPeriods.filter((item) => overlapsRange(item.start_date, item.end_date, weekStart, weekEnd));
 
           return (
-            <button
-              type="button"
-              key={iso}
-              className={[
-                "day-cell",
-                !isSameMonth(day, month) ? "outside" : "",
-                isWeekendDay ? "weekend" : "",
-                reservation ? `occupied ${reservation.status === "PRE_RESERVA" ? "pre" : "confirmed"}` : "",
-                block ? "blocked" : "",
-                isSelected ? "selected" : "",
-                isToday(day) ? "today" : "",
-              ].filter(Boolean).join(" ")}
-              onClick={() => {
-                if (!onSelect) return;
-                if (reservation) {
-                  onSelect({
-                    start: reservation.start_date,
-                    end: reservation.end_date,
-                    reservationId: reservation.id,
-                  });
-                  return;
-                }
-                if (block) {
-                  onSelect({ start: block.start_date, end: block.end_date, blockId: block.id });
-                  return;
-                }
-                onSelect(weekend);
-              }}
-              aria-label={`${format(day, "dd 'de' MMMM", { locale: ptBR })}${reservation ? `, ${reservation.church_name}` : ""}`}
-            >
-              <div className="day-cell-top">
-                <span className="day-number">{format(day, "d")}</span>
-                {isToday(day) ? <span className="today-dot" /> : null}
-              </div>
+            <div className="prototype-week-row" key={weekStart}>
+              {week.map((day, index) => {
+                const iso = format(day, "yyyy-MM-dd");
+                const reservation = reservations.find(
+                  (item) => item.status !== "CANCELADA" && overlapsDay(iso, item.start_date, item.end_date)
+                );
+                const block = blockedPeriods.find((item) => overlapsDay(iso, item.start_date, item.end_date));
+                const isWeekendDay = index >= 4;
+                const isSelected = Boolean(selectedStart && selectedEnd && overlapsDay(iso, selectedStart, selectedEnd));
 
-              {reservation ? (
-                <div className="calendar-booking">
-                  <strong>{reservation.church_name}</strong>
-                  <span>{reservation.contact_name}</span>
-                  <small>{reservation.guests_confirmed ?? reservation.guests_estimated} pessoas</small>
-                </div>
-              ) : block ? (
-                <div className="calendar-booking block-copy">
-                  <strong>Bloqueado</strong>
-                  <span>{block.reason}</span>
-                </div>
-              ) : isWeekendDay && isSameMonth(day, month) ? (
-                <span className="free-label">Livre</span>
-              ) : null}
-            </button>
+                return (
+                  <button
+                    type="button"
+                    key={iso}
+                    className={[
+                      "prototype-day-cell",
+                      !isSameMonth(day, month) ? "outside" : "",
+                      isWeekendDay ? "weekend" : "",
+                      isSelected ? "selected" : "",
+                      isToday(day) ? "today" : "",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => {
+                      if (!onSelect) return;
+                      if (reservation) {
+                        onSelect({ start: reservation.start_date, end: reservation.end_date, reservationId: reservation.id });
+                        return;
+                      }
+                      if (block) {
+                        onSelect({ start: block.start_date, end: block.end_date, blockId: block.id });
+                        return;
+                      }
+                      if (isWeekendDay) onSelect(weekendFor(day));
+                    }}
+                    aria-label={format(day, "dd 'de' MMMM", { locale: ptBR })}
+                  >
+                    <span className="prototype-day-number">{format(day, "d")}</span>
+                  </button>
+                );
+              })}
+
+              {weekReservations.map((reservation) => {
+                const startIndex = Math.max(0, week.findIndex((day) => format(day, "yyyy-MM-dd") >= reservation.start_date));
+                const endIndexRaw = week.findLastIndex((day) => format(day, "yyyy-MM-dd") <= reservation.end_date);
+                const endIndex = endIndexRaw < 0 ? 6 : endIndexRaw;
+
+                return (
+                  <button
+                    type="button"
+                    className={`prototype-booking-bar ${reservationTone(reservation.status)}`}
+                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}` }}
+                    key={reservation.id}
+                    onClick={() => onSelect?.({ start: reservation.start_date, end: reservation.end_date, reservationId: reservation.id })}
+                  >
+                    <strong>{reservation.church_name}</strong>
+                    <span>{formatRange(reservation.start_date, reservation.end_date)}</span>
+                  </button>
+                );
+              })}
+
+              {weekBlocks.map((block) => {
+                const startIndex = Math.max(0, week.findIndex((day) => format(day, "yyyy-MM-dd") >= block.start_date));
+                const endIndexRaw = week.findLastIndex((day) => format(day, "yyyy-MM-dd") <= block.end_date);
+                const endIndex = endIndexRaw < 0 ? 6 : endIndexRaw;
+
+                return (
+                  <button
+                    type="button"
+                    className="prototype-booking-bar blocked"
+                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}` }}
+                    key={block.id}
+                    onClick={() => onSelect?.({ start: block.start_date, end: block.end_date, blockId: block.id })}
+                  >
+                    <strong>Bloqueado</strong>
+                    <span>{block.reason}</span>
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
+      </div>
+
+      <div className="prototype-calendar-legend" aria-label="Legenda do calendário">
+        <span><i className="legend-square pre" />Pré-reserva</span>
+        <span><i className="legend-square confirmed" />Confirmada</span>
+        <span><i className="legend-square done" />Realizada</span>
+        <span><i className="legend-square blocked" />Bloqueada</span>
       </div>
     </div>
   );

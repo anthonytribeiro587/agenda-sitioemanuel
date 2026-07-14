@@ -11,12 +11,13 @@ import {
   LogOut,
   Menu,
   Settings,
+  TreePine,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useAgenda } from "@/components/AgendaProvider";
 
 const links = [
-  { href: "/agenda", label: "Agenda", icon: CalendarDays },
+  { href: "/agenda", label: "Calendário", icon: CalendarDays },
   { href: "/reservas", label: "Reservas", icon: ListChecks },
   { href: "/clientes", label: "Clientes", icon: ContactRound },
   { href: "/financeiro", label: "Financeiro", icon: CircleDollarSign },
@@ -24,7 +25,7 @@ const links = [
 ];
 
 function titleFromPath(pathname: string) {
-  if (pathname.startsWith("/agenda") || pathname.startsWith("/dashboard")) return ["Agenda", "Controle dos fins de semana"];
+  if (pathname.startsWith("/agenda") || pathname.startsWith("/dashboard")) return ["Calendário", "Agenda interna"];
   if (pathname.startsWith("/reservas/")) return ["Detalhes da reserva", "Dados e pagamentos"];
   if (pathname.startsWith("/reservas")) return ["Reservas", "Histórico e busca"];
   if (pathname.startsWith("/clientes")) return ["Clientes", "Contatos atendidos"];
@@ -47,12 +48,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell prototype-shell">
       {open ? <button className="mobile-overlay" onClick={() => setOpen(false)} aria-label="Fechar menu" /> : null}
-      <aside className={`sidebar ${open ? "open" : ""}`}>
-        <div className="brand">
-          <div className="brand-mark">SE</div>
-          <div><h1>Agenda Emanuel</h1><p>Gestão do sítio</p></div>
+      <aside className={`sidebar prototype-sidebar ${open ? "open" : ""}`}>
+        <div className="brand prototype-brand">
+          <div className="brand-mark prototype-brand-mark"><TreePine /></div>
+          <div><h1>Sítio Emanuel</h1><p>Agenda interna</p></div>
         </div>
 
         <div className="nav-group-label">Menu principal</div>
@@ -67,13 +68,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="sidebar-mini-card"><CalendarDays /><div><strong>Próximo passo</strong><span>Selecione um fim de semana na agenda.</span></div></div>
-        </div>
+        <button className="sidebar-logout" type="button" onClick={logout}>
+          <LogOut /> Sair
+        </button>
       </aside>
 
-      <section className="main-area">
-        <header className="topbar">
+      <section className="main-area prototype-main-area">
+        <header className="topbar prototype-topbar">
           <div className="topbar-left">
             <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={19} /></button>
             <div><div className="topbar-title">{title}</div><div className="topbar-subtitle">{subtitle}</div></div>
@@ -83,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button className="icon-button" onClick={logout} title="Sair"><LogOut size={17} /></button>
           </div>
         </header>
-        <div className="content">{children}</div>
+        <div className="content prototype-content">{children}</div>
       </section>
     </div>
   );

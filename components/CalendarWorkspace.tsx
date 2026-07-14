@@ -13,6 +13,7 @@ import {
   Save,
   Trash2,
   WalletCards,
+  X,
 } from "lucide-react";
 import { useAgenda } from "@/components/AgendaProvider";
 import { MonthCalendar } from "@/components/MonthCalendar";
@@ -72,12 +73,21 @@ export function CalendarWorkspace() {
   const [confirmedTotal, setConfirmedTotal] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
 
   const selectedReservation = reservations.find((item) => item.id === selectedReservationId) ?? null;
   const selectedBlock = blockedPeriods.find((item) => item.id === selectedBlockId) ?? null;
 
   function updateForm<K extends keyof typeof blankForm>(key: K, value: (typeof blankForm)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function openNewReservation() {
+    setSelectedReservationId(null);
+    setSelectedBlockId(null);
+    setMode("reservation");
+    setMessage("");
+    setModalOpen(true);
   }
 
   function select(selection: {
@@ -96,6 +106,7 @@ export function CalendarWorkspace() {
     const reservation = reservations.find((item) => item.id === selection.reservationId);
     setConfirmedTotal(reservation?.total_amount ? String(reservation.total_amount) : "");
     setPaymentAmount("");
+    setModalOpen(true);
   }
 
   async function create(event: React.FormEvent) {
@@ -131,6 +142,7 @@ export function CalendarWorkspace() {
       }
 
       setSelectedReservationId(created.id);
+      setSelectedBlockId(null);
       setForm(blankForm);
       setMessage("Reserva salva com sucesso.");
     } catch (error) {
@@ -156,6 +168,7 @@ export function CalendarWorkspace() {
         reason: blockReason.trim(),
       });
       setSelectedBlockId(created.id);
+      setSelectedReservationId(null);
       setBlockReason("");
       setMessage("Período bloqueado.");
     } catch (error) {
@@ -171,6 +184,8 @@ export function CalendarWorkspace() {
     try {
       await updateReservation(selectedReservation.id, { status: "CONFIRMADA" });
       setMessage("Reserva confirmada.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível confirmar a reserva.");
     } finally {
       setSaving(false);
     }
@@ -204,141 +219,156 @@ export function CalendarWorkspace() {
   }
 
   const periodLabel = formatRange(selectedStart, selectedEnd);
+  const successMessage = message.includes("sucesso") || message.includes("confirmada") || message.includes("atualizados") || message.includes("bloqueado") || message.includes("removido");
 
   return (
-    <div className="workspace-grid">
-      <section className="calendar-card">
-        <MonthCalendar
-          reservations={reservations}
-          blockedPeriods={blockedPeriods}
-          selectedStart={selectedStart}
-          selectedEnd={selectedEnd}
-          onSelect={select}
-        />
-      </section>
+    <>
+      <MonthCalendar
+        reservations={reservations}
+        blockedPeriods={blockedPeriods}
+        selectedStart={selectedStart}
+        selectedEnd={selectedEnd}
+        onSelect={select}
+        onNewReservation={openNewReservation}
+      />
 
-      <aside className="agenda-side-panel">
-        <div className="selected-period">
-          <span>Fim de semana selecionado</span>
-          <strong>{periodLabel}</strong>
-        </div>
-
-        {message ? <div className={message.includes("sucesso") || message.includes("confirmada") || message.includes("atualizados") || message.includes("bloqueado") || message.includes("removido") ? "success-box" : "error-box"}>{message}</div> : null}
-
-        {selectedReservation ? (
-          <div className="side-panel-content">
-            <div className="side-panel-heading">
+      {modalOpen ? (
+        <div className="prototype-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) setModalOpen(false);
+        }}>
+          <section className="prototype-modal" role="dialog" aria-modal="true" aria-label="Gerenciar fim de semana">
+            <header className="prototype-modal-header">
               <div>
-                <StatusBadge status={selectedReservation.status} />
-                <h2>{selectedReservation.church_name}</h2>
-                <p>{selectedReservation.contact_name}</p>
+                <h2>{selectedReservation ? selectedReservation.church_name : selectedBlock ? "Período bloqueado" : "Nova reserva"}</h2>
+                <p>{periodLabel}</p>
               </div>
-              <CalendarCheck2 />
-            </div>
+              <button type="button" className="prototype-modal-close" onClick={() => setModalOpen(false)} aria-label="Fechar">
+                <X />
+              </button>
+            </header>
 
-            <div className="compact-info-grid">
-              <div><span>Contato</span><strong>{selectedReservation.phone}</strong></div>
-              <div><span>Pessoas</span><strong>{selectedReservation.guests_confirmed ?? selectedReservation.guests_estimated}</strong></div>
-              <div><span>Cardápio</span><strong>{selectedReservation.package_name}</strong></div>
-              <div><span>Recebido</span><strong>{formatCurrency(paymentTotal(selectedReservation.payments))}</strong></div>
-            </div>
+            <div className="prototype-modal-body">
+              {message ? <div className={successMessage ? "success-box" : "error-box"}>{message}</div> : null}
 
-            <div className="side-actions">
-              <a className="button button-secondary" href={whatsappUrl(selectedReservation)} target="_blank" rel="noreferrer">
-                <MessageCircle /> WhatsApp
-              </a>
-              <Link className="button button-secondary" href={`/reservas/${selectedReservation.id}`}>
-                <ExternalLink /> Detalhes
-              </Link>
-              {selectedReservation.status === "PRE_RESERVA" ? (
-                <button className="button button-primary" type="button" onClick={confirmReservation} disabled={saving}>
-                  <Check /> Confirmar
-                </button>
-              ) : null}
-            </div>
+              {selectedReservation ? (
+                <div className="prototype-reservation-modal-grid">
+                  <div className="side-panel-content">
+                    <div className="side-panel-heading">
+                      <div>
+                        <StatusBadge status={selectedReservation.status} />
+                        <h2>{selectedReservation.church_name}</h2>
+                        <p>{selectedReservation.contact_name}</p>
+                      </div>
+                      <CalendarCheck2 />
+                    </div>
 
-            <form className="mini-finance-form" onSubmit={saveFinancialUpdate}>
-              <div className="mini-section-title">
-                <WalletCards />
-                <div><strong>Valores da reserva</strong><span>O total pode ser informado somente depois da negociação.</span></div>
-              </div>
-              <label className="field">
-                <span className="label">Valor total confirmado</span>
-                <input className="input" type="number" min="0" step="0.01" placeholder="Ainda não definido" value={confirmedTotal} onChange={(event) => setConfirmedTotal(event.target.value)} />
-              </label>
-              <label className="field">
-                <span className="label">Novo pagamento / sinal</span>
-                <input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} />
-              </label>
-              {selectedReservation.total_amount > 0 ? (
-                <div className="balance-line">
-                  <span>Saldo restante</span>
-                  <strong>{formatCurrency(reservationBalance(selectedReservation))}</strong>
+                    <div className="compact-info-grid">
+                      <div><span>Contato</span><strong>{selectedReservation.phone}</strong></div>
+                      <div><span>Pessoas</span><strong>{selectedReservation.guests_confirmed ?? selectedReservation.guests_estimated}</strong></div>
+                      <div><span>Cardápio</span><strong>{selectedReservation.package_name}</strong></div>
+                      <div><span>Recebido</span><strong>{formatCurrency(paymentTotal(selectedReservation.payments))}</strong></div>
+                    </div>
+
+                    <div className="side-actions">
+                      <a className="button button-secondary" href={whatsappUrl(selectedReservation)} target="_blank" rel="noreferrer">
+                        <MessageCircle /> WhatsApp
+                      </a>
+                      <Link className="button button-secondary" href={`/reservas/${selectedReservation.id}`}>
+                        <ExternalLink /> Ver detalhes
+                      </Link>
+                      {selectedReservation.status === "PRE_RESERVA" ? (
+                        <button className="button button-primary" type="button" onClick={confirmReservation} disabled={saving}>
+                          <Check /> Confirmar
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <form className="mini-finance-form" onSubmit={saveFinancialUpdate}>
+                    <div className="mini-section-title">
+                      <WalletCards />
+                      <div><strong>Financeiro</strong><span>O valor final pode ser definido depois.</span></div>
+                    </div>
+                    <label className="field">
+                      <span className="label">Valor total confirmado</span>
+                      <input className="input" type="number" min="0" step="0.01" placeholder="Ainda não definido" value={confirmedTotal} onChange={(event) => setConfirmedTotal(event.target.value)} />
+                    </label>
+                    <label className="field">
+                      <span className="label">Novo pagamento / sinal</span>
+                      <input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} />
+                    </label>
+                    {selectedReservation.total_amount > 0 ? (
+                      <div className="balance-line">
+                        <span>Saldo restante</span>
+                        <strong>{formatCurrency(reservationBalance(selectedReservation))}</strong>
+                      </div>
+                    ) : (
+                      <div className="pending-total-note"><Clock3 /> Total ainda não confirmado.</div>
+                    )}
+                    <button className="button button-primary button-wide" disabled={saving}>
+                      <Save /> {saving ? "Salvando..." : "Atualizar valores"}
+                    </button>
+                  </form>
+                </div>
+              ) : selectedBlock ? (
+                <div className="side-panel-content">
+                  <div className="side-panel-heading blocked-heading">
+                    <div><span className="eyebrow">Período indisponível</span><h2>Data bloqueada</h2><p>{selectedBlock.reason}</p></div>
+                    <Ban />
+                  </div>
+                  <button
+                    className="button button-danger"
+                    type="button"
+                    onClick={async () => {
+                      await removeBlockedPeriod(selectedBlock.id);
+                      setSelectedBlockId(null);
+                      setMessage("Bloqueio removido.");
+                    }}
+                  >
+                    <Trash2 /> Remover bloqueio
+                  </button>
                 </div>
               ) : (
-                <div className="pending-total-note"><Clock3 /> Total ainda não confirmado.</div>
-              )}
-              <button className="button button-primary" disabled={saving}>
-                <Save /> {saving ? "Salvando..." : "Atualizar valores"}
-              </button>
-            </form>
-          </div>
-        ) : selectedBlock ? (
-          <div className="side-panel-content">
-            <div className="side-panel-heading blocked-heading">
-              <div><span className="eyebrow">Período indisponível</span><h2>Data bloqueada</h2><p>{selectedBlock.reason}</p></div>
-              <Ban />
-            </div>
-            <button
-              className="button button-danger"
-              type="button"
-              onClick={async () => {
-                await removeBlockedPeriod(selectedBlock.id);
-                setSelectedBlockId(null);
-                setMessage("Bloqueio removido.");
-              }}
-            >
-              <Trash2 /> Remover bloqueio
-            </button>
-          </div>
-        ) : (
-          <div className="side-panel-content">
-            <div className="mode-tabs">
-              <button type="button" className={mode === "reservation" ? "active" : ""} onClick={() => setMode("reservation")}>Nova reserva</button>
-              <button type="button" className={mode === "block" ? "active" : ""} onClick={() => setMode("block")}>Bloquear data</button>
-            </div>
+                <>
+                  <div className="mode-tabs">
+                    <button type="button" className={mode === "reservation" ? "active" : ""} onClick={() => setMode("reservation")}>Nova reserva</button>
+                    <button type="button" className={mode === "block" ? "active" : ""} onClick={() => setMode("block")}>Bloquear data</button>
+                  </div>
 
-            {mode === "reservation" ? (
-              <form onSubmit={create} className="calendar-reservation-form">
-                <div className="form-intro">
-                  <strong>Quem está agendando?</strong>
-                  <span>Cadastre primeiro a pré-reserva e o sinal. O valor total pode ficar para depois.</span>
-                </div>
-                <div className="form-grid compact-form-grid">
-                  <label className="field field-full"><span className="label">Igreja / grupo</span><input className="input" value={form.church_name} onChange={(event) => updateForm("church_name", event.target.value)} required /></label>
-                  <label className="field"><span className="label">Responsável</span><input className="input" value={form.contact_name} onChange={(event) => updateForm("contact_name", event.target.value)} required /></label>
-                  <label className="field"><span className="label">WhatsApp</span><input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required /></label>
-                  <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
-                  <label className="field"><span className="label">Cardápio</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
-                  <label className="field"><span className="label">Valor do sinal</span><input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={form.deposit_amount} onChange={(event) => updateForm("deposit_amount", event.target.value)} /></label>
-                  <label className="field"><span className="label">Data do sinal</span><input className="input" type="date" value={form.payment_date} onChange={(event) => updateForm("payment_date", event.target.value)} /></label>
-                  <label className="field field-full"><span className="label">Valor total confirmado <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Preencher quando o valor final for definido" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
-                  <label className="field field-full"><span className="label">Observações</span><textarea className="textarea compact-textarea" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} placeholder="Horários, necessidades especiais e detalhes combinados..." /></label>
-                </div>
-                <button className="button button-primary button-wide" disabled={saving}>
-                  <Save /> {saving ? "Salvando..." : "Salvar pré-reserva"}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={block} className="calendar-reservation-form">
-                <div className="form-intro"><strong>Bloquear este fim de semana</strong><span>Use para manutenção, eventos internos ou indisponibilidade.</span></div>
-                <label className="field"><span className="label">Motivo</span><textarea className="textarea compact-textarea" value={blockReason} onChange={(event) => setBlockReason(event.target.value)} required /></label>
-                <button className="button button-primary button-wide" disabled={saving}><Ban /> Bloquear período</button>
-              </form>
-            )}
-          </div>
-        )}
-      </aside>
-    </div>
+                  {mode === "reservation" ? (
+                    <form onSubmit={create} className="calendar-reservation-form">
+                      <div className="form-intro">
+                        <strong>Quem está agendando?</strong>
+                        <span>Cadastre a pré-reserva e o sinal. O valor total pode ficar para depois.</span>
+                      </div>
+                      <div className="form-grid compact-form-grid">
+                        <label className="field field-full"><span className="label">Igreja / grupo</span><input className="input" value={form.church_name} onChange={(event) => updateForm("church_name", event.target.value)} required /></label>
+                        <label className="field"><span className="label">Responsável</span><input className="input" value={form.contact_name} onChange={(event) => updateForm("contact_name", event.target.value)} required /></label>
+                        <label className="field"><span className="label">WhatsApp</span><input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required /></label>
+                        <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
+                        <label className="field"><span className="label">Cardápio</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
+                        <label className="field"><span className="label">Valor do sinal</span><input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={form.deposit_amount} onChange={(event) => updateForm("deposit_amount", event.target.value)} /></label>
+                        <label className="field"><span className="label">Data do sinal</span><input className="input" type="date" value={form.payment_date} onChange={(event) => updateForm("payment_date", event.target.value)} /></label>
+                        <label className="field field-full"><span className="label">Valor total confirmado <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Preencher quando o valor final for definido" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
+                        <label className="field field-full"><span className="label">Observações</span><textarea className="textarea compact-textarea" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} placeholder="Horários, necessidades especiais e detalhes combinados..." /></label>
+                      </div>
+                      <button className="button button-primary button-wide" disabled={saving}>
+                        <Save /> {saving ? "Salvando..." : "Salvar pré-reserva"}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={block} className="calendar-reservation-form">
+                      <div className="form-intro"><strong>Bloquear este fim de semana</strong><span>Use para manutenção, eventos internos ou indisponibilidade.</span></div>
+                      <label className="field"><span className="label">Motivo</span><textarea className="textarea compact-textarea" value={blockReason} onChange={(event) => setBlockReason(event.target.value)} required /></label>
+                      <button className="button button-primary button-wide" disabled={saving}><Ban /> Bloquear período</button>
+                    </form>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
   );
 }
