@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/vercel-build
+      - redesign/calendar-workspace-20260714
   pull_request:
 
 jobs:
@@ -26,7 +27,27 @@ jobs:
         run: npm run typecheck
 
       - name: Lint
-        run: npm run lint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm run lint > lint-output.txt 2>&1
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload lint output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-output
+          path: lint-output.txt
+          retention-days: 1
+
+      - name: Fail when lint reports errors
+        if: steps.lint.outputs.exit_code != '0'
+        run: exit 1
 
       - name: Build
         run: npm run build
