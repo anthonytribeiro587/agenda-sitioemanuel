@@ -60,7 +60,7 @@ export function CalendarWorkspace() {
     addBlockedPeriod,
     removeBlockedPeriod,
   } = useAgenda();
-  const initial = useMemo(initialWeekend, []);
+  const initial = useMemo(() => initialWeekend(), []);
   const [selectedStart, setSelectedStart] = useState(initial.start);
   const [selectedEnd, setSelectedEnd] = useState(initial.end);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
