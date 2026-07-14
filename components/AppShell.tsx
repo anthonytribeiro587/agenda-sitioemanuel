@@ -7,33 +7,30 @@ import {
   CalendarDays,
   CircleDollarSign,
   ContactRound,
-  LayoutDashboard,
+  ListChecks,
   LogOut,
   Menu,
   Settings,
-  TentTree,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useAgenda } from "@/components/AgendaProvider";
 
 const links = [
-  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
-  { href: "/reservas", label: "Reservas", icon: TentTree },
+  { href: "/reservas", label: "Reservas", icon: ListChecks },
   { href: "/clientes", label: "Clientes", icon: ContactRound },
   { href: "/financeiro", label: "Financeiro", icon: CircleDollarSign },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 function titleFromPath(pathname: string) {
-  if (pathname.startsWith("/agenda")) return ["Agenda", "Calendário e períodos do sítio"];
-  if (pathname.startsWith("/reservas/nova")) return ["Nova reserva", "Cadastro completo do evento"];
-  if (pathname.startsWith("/reservas/")) return ["Detalhes da reserva", "Dados, pagamentos e histórico"];
-  if (pathname.startsWith("/reservas")) return ["Reservas", "Pré-reservas e eventos confirmados"];
-  if (pathname.startsWith("/clientes")) return ["Clientes", "Contatos e igrejas atendidas"];
-  if (pathname.startsWith("/financeiro")) return ["Financeiro", "Pagamentos e valores pendentes"];
+  if (pathname.startsWith("/agenda") || pathname.startsWith("/dashboard")) return ["Agenda", "Controle dos fins de semana"];
+  if (pathname.startsWith("/reservas/")) return ["Detalhes da reserva", "Dados e pagamentos"];
+  if (pathname.startsWith("/reservas")) return ["Reservas", "Histórico e busca"];
+  if (pathname.startsWith("/clientes")) return ["Clientes", "Contatos atendidos"];
+  if (pathname.startsWith("/financeiro")) return ["Financeiro", "Sinais e saldos"];
   if (pathname.startsWith("/configuracoes")) return ["Configurações", "Acessos e integrações"];
-  return ["Visão geral", "O que precisa da sua atenção hoje"];
+  return ["Agenda", "Gestão interna"];
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -55,40 +52,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">SE</div>
-          <div>
-            <h1>Agenda Sítio Emanuel</h1>
-            <p>Gestão interna</p>
-          </div>
+          <div><h1>Agenda Emanuel</h1><p>Gestão do sítio</p></div>
         </div>
-        <div className="nav-group-label">Organização</div>
+
+        <div className="nav-group-label">Menu principal</div>
         <nav className="nav-list">
           {links.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+            const active = pathname === href || (href !== "/agenda" && pathname.startsWith(href)) || (href === "/agenda" && pathname.startsWith("/dashboard"));
             return (
               <Link key={href} href={href} onClick={() => setOpen(false)} className={`nav-link ${active ? "active" : ""}`}>
-                <Icon />
-                {label}
+                <Icon />{label}
               </Link>
             );
           })}
         </nav>
+
         <div className="sidebar-footer">
-          <div className="sidebar-note">
-            Agenda separada da landing page pública. Apenas pessoas autorizadas acessam os dados.
-          </div>
+          <div className="sidebar-mini-card"><CalendarDays /><div><strong>Próximo passo</strong><span>Selecione um fim de semana na agenda.</span></div></div>
         </div>
       </aside>
+
       <section className="main-area">
         <header className="topbar">
           <div className="topbar-left">
             <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={19} /></button>
-            <div>
-              <div className="topbar-title">{title}</div>
-              <div className="topbar-subtitle">{subtitle}</div>
-            </div>
+            <div><div className="topbar-title">{title}</div><div className="topbar-subtitle">{subtitle}</div></div>
           </div>
           <div className="topbar-actions">
-            {isDemo ? <span className="demo-chip">Modo demonstração</span> : null}
+            {isDemo ? <span className="demo-chip">Demonstração</span> : <span className="connected-chip">Banco conectado</span>}
             <button className="icon-button" onClick={logout} title="Sair"><LogOut size={17} /></button>
           </div>
         </header>
