@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,7 +12,6 @@ import {
   LogOut,
   Menu,
   Settings,
-  TreePine,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useAgenda } from "@/components/AgendaProvider";
@@ -50,40 +50,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell prototype-shell">
       {open ? <button className="mobile-overlay" onClick={() => setOpen(false)} aria-label="Fechar menu" /> : null}
+
       <aside className={`sidebar prototype-sidebar ${open ? "open" : ""}`}>
-        <div className="brand prototype-brand">
-          <div className="brand-mark prototype-brand-mark"><TreePine /></div>
-          <div><h1>Sítio Emanuel</h1><p>Agenda interna</p></div>
+        <div className="prototype-brand">
+          <Image
+            src="/sitio-emanuel-logo.svg"
+            alt="Sítio Emanuel"
+            width={160}
+            height={94}
+            priority
+            className="sitio-brand-logo"
+          />
+          <span className="brand-subtitle">Agenda interna</span>
         </div>
 
         <div className="nav-group-label">Menu principal</div>
         <nav className="nav-list">
           {links.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/agenda" && pathname.startsWith(href)) || (href === "/agenda" && pathname.startsWith("/dashboard"));
+            const active =
+              pathname === href ||
+              (href !== "/agenda" && pathname.startsWith(href)) ||
+              (href === "/agenda" && pathname.startsWith("/dashboard"));
+
             return (
-              <Link key={href} href={href} onClick={() => setOpen(false)} className={`nav-link ${active ? "active" : ""}`}>
-                <Icon />{label}
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setOpen(false)}
+                className={`nav-link ${active ? "active" : ""}`}
+              >
+                <Icon />
+                {label}
               </Link>
             );
           })}
         </nav>
 
         <button className="sidebar-logout" type="button" onClick={logout}>
-          <LogOut /> Sair
+          <LogOut />
+          Sair
         </button>
       </aside>
 
       <section className="main-area prototype-main-area">
         <header className="topbar prototype-topbar">
           <div className="topbar-left">
-            <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu size={19} /></button>
-            <div><div className="topbar-title">{title}</div><div className="topbar-subtitle">{subtitle}</div></div>
+            <button className="mobile-menu" onClick={() => setOpen(true)} aria-label="Abrir menu">
+              <Menu size={19} />
+            </button>
+            <div>
+              <div className="topbar-title">{title}</div>
+              <div className="topbar-subtitle">{subtitle}</div>
+            </div>
           </div>
+
           <div className="topbar-actions">
             {isDemo ? <span className="demo-chip">Demonstração</span> : <span className="connected-chip">Banco conectado</span>}
-            <button className="icon-button" onClick={logout} title="Sair"><LogOut size={17} /></button>
+            <button className="icon-button" onClick={logout} title="Sair">
+              <LogOut size={17} />
+            </button>
           </div>
         </header>
+
         <div className="content prototype-content">{children}</div>
       </section>
     </div>

@@ -28,6 +28,7 @@ type CalendarSelection = {
 function weekendFor(day: Date) {
   const dayOfWeek = day.getDay();
   const friday = addDays(day, dayOfWeek === 0 ? -2 : dayOfWeek === 6 ? -1 : 5 - dayOfWeek);
+
   return {
     start: format(friday, "yyyy-MM-dd"),
     end: format(addDays(friday, 2), "yyyy-MM-dd"),
@@ -91,10 +92,20 @@ export function MonthCalendar({
           <button className="calendar-today-button" type="button" onClick={() => setMonth(startOfMonth(new Date()))}>
             Hoje
           </button>
-          <button className="calendar-arrow" type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Mês anterior">
+          <button
+            className="calendar-arrow"
+            type="button"
+            onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+            aria-label="Mês anterior"
+          >
             <ChevronLeft />
           </button>
-          <button className="calendar-arrow" type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Próximo mês">
+          <button
+            className="calendar-arrow"
+            type="button"
+            onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+            aria-label="Próximo mês"
+          >
             <ChevronRight />
           </button>
         </div>
@@ -102,17 +113,20 @@ export function MonthCalendar({
         <h2 className="prototype-month-title">{monthLabel(month)}</h2>
 
         <button className="prototype-new-button" type="button" onClick={onNewReservation}>
-          <Plus /> Nova reserva
+          <Plus />
+          Nova reserva
         </button>
       </div>
 
       <div className="prototype-weekdays">
         {weekdays.map((day, index) => (
-          <div key={day} className={index >= 4 ? "weekend-heading" : ""}>{day}</div>
+          <div key={day} className={index >= 4 ? "weekend-heading" : ""}>
+            {day}
+          </div>
         ))}
       </div>
 
-      <div className="prototype-calendar-body">
+      <div className="prototype-calendar-body" style={{ "--calendar-weeks": weeks.length } as React.CSSProperties}>
         {weeks.map((week) => {
           const weekStart = format(week[0], "yyyy-MM-dd");
           const weekEnd = format(week[6], "yyyy-MM-dd");
@@ -136,6 +150,7 @@ export function MonthCalendar({
                   <button
                     type="button"
                     key={iso}
+                    style={{ gridColumn: index + 1 }}
                     className={[
                       "prototype-day-cell",
                       !isSameMonth(day, month) ? "outside" : "",
@@ -145,14 +160,25 @@ export function MonthCalendar({
                     ].filter(Boolean).join(" ")}
                     onClick={() => {
                       if (!onSelect) return;
+
                       if (reservation) {
-                        onSelect({ start: reservation.start_date, end: reservation.end_date, reservationId: reservation.id });
+                        onSelect({
+                          start: reservation.start_date,
+                          end: reservation.end_date,
+                          reservationId: reservation.id,
+                        });
                         return;
                       }
+
                       if (block) {
-                        onSelect({ start: block.start_date, end: block.end_date, blockId: block.id });
+                        onSelect({
+                          start: block.start_date,
+                          end: block.end_date,
+                          blockId: block.id,
+                        });
                         return;
                       }
+
                       if (isWeekendDay) onSelect(weekendFor(day));
                     }}
                     aria-label={format(day, "dd 'de' MMMM", { locale: ptBR })}
@@ -163,17 +189,28 @@ export function MonthCalendar({
               })}
 
               {weekReservations.map((reservation) => {
-                const startIndex = Math.max(0, week.findIndex((day) => format(day, "yyyy-MM-dd") >= reservation.start_date));
-                const endIndexRaw = week.findLastIndex((day) => format(day, "yyyy-MM-dd") <= reservation.end_date);
+                const startIndex = Math.max(
+                  0,
+                  week.findIndex((day) => format(day, "yyyy-MM-dd") >= reservation.start_date)
+                );
+                const endIndexRaw = week.findLastIndex(
+                  (day) => format(day, "yyyy-MM-dd") <= reservation.end_date
+                );
                 const endIndex = endIndexRaw < 0 ? 6 : endIndexRaw;
 
                 return (
                   <button
                     type="button"
                     className={`prototype-booking-bar ${reservationTone(reservation.status)}`}
-                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}` }}
-                    key={reservation.id}
-                    onClick={() => onSelect?.({ start: reservation.start_date, end: reservation.end_date, reservationId: reservation.id })}
+                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}`, gridRow: 1 }}
+                    key={`${reservation.id}-${weekStart}`}
+                    onClick={() =>
+                      onSelect?.({
+                        start: reservation.start_date,
+                        end: reservation.end_date,
+                        reservationId: reservation.id,
+                      })
+                    }
                   >
                     <strong>{reservation.church_name}</strong>
                     <span>{formatRange(reservation.start_date, reservation.end_date)}</span>
@@ -182,17 +219,28 @@ export function MonthCalendar({
               })}
 
               {weekBlocks.map((block) => {
-                const startIndex = Math.max(0, week.findIndex((day) => format(day, "yyyy-MM-dd") >= block.start_date));
-                const endIndexRaw = week.findLastIndex((day) => format(day, "yyyy-MM-dd") <= block.end_date);
+                const startIndex = Math.max(
+                  0,
+                  week.findIndex((day) => format(day, "yyyy-MM-dd") >= block.start_date)
+                );
+                const endIndexRaw = week.findLastIndex(
+                  (day) => format(day, "yyyy-MM-dd") <= block.end_date
+                );
                 const endIndex = endIndexRaw < 0 ? 6 : endIndexRaw;
 
                 return (
                   <button
                     type="button"
                     className="prototype-booking-bar blocked"
-                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}` }}
-                    key={block.id}
-                    onClick={() => onSelect?.({ start: block.start_date, end: block.end_date, blockId: block.id })}
+                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}`, gridRow: 1 }}
+                    key={`${block.id}-${weekStart}`}
+                    onClick={() =>
+                      onSelect?.({
+                        start: block.start_date,
+                        end: block.end_date,
+                        blockId: block.id,
+                      })
+                    }
                   >
                     <strong>Bloqueado</strong>
                     <span>{block.reason}</span>
