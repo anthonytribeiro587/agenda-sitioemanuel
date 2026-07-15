@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 112" role="img" aria-labelledby="title desc">
+  <title id="title">Sítio Emanuel</title>
+  <desc id="desc">Árvore estilizada e nome Sítio Emanuel</desc>
+  <g fill="none" stroke="#d8bc75" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M95 68V35"/>
+    <path d="M95 43c-11-2-20-9-25-20"/>
+    <path d="M95 48c12-1 22-9 28-21"/>
+    <path d="M94 55c-10 0-18-5-24-13"/>
+    <path d="M96 59c10 0 19-5 25-13"/>
+    <path d="M84 69h22"/>
+  </g>
+  <g fill="#f6ecd2">
+    <ellipse cx="65" cy="20" rx="6" ry="10" transform="rotate(-35 65 20)"/>
+    <ellipse cx="78" cy="15" rx="5.5" ry="9" transform="rotate(-15 78 15)"/>
+    <ellipse cx="94" cy="13" rx="5.5" ry="9"/>
+    <ellipse cx="111" cy="16" rx="5.5" ry="9" transform="rotate(16 111 16)"/>
+    <ellipse cx="126" cy="23" rx="6" ry="10" transform="rotate(36 126 23)"/>
+    <ellipse cx="133" cy="38" rx="5.5" ry="9" transform="rotate(58 133 38)"/>
+    <ellipse cx="57" cy="36" rx="5.5" ry="9" transform="rotate(-58 57 36)"/>
+    <ellipse cx="67" cy="50" rx="5" ry="8" transform="rotate(-44 67 50)"/>
+    <ellipse cx="122" cy="52" rx="5" ry="8" transform="rotate(44 122 52)"/>
+  </g>
+  <text x="95" y="101" text-anchor="middle" fill="#fff9eb" font-family="Georgia, 'Times New Roman', serif" font-size="25" font-weight="600">Sítio Emanuel</text>
+</svg>

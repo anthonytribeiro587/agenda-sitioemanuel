@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -43,7 +44,7 @@ type AgendaContextValue = {
 };
 
 const AgendaContext = createContext<AgendaContextValue | null>(null);
-const STORAGE_KEY = "agenda-sitio-emanuel-demo-v1";
+const STORAGE_KEY = "agenda-sitio-emanuel-demo-v2";
 
 type StoredDemo = {
   reservations: Reservation[];
@@ -78,9 +79,19 @@ function initialDemo(): StoredDemo {
   };
 }
 
+async function readJsonMessage(response: Response) {
+  try {
+    const body = (await response.json()) as { error?: string };
+    return body.error ?? "Não foi possível autorizar este usuário.";
+  } catch {
+    return "Não foi possível autorizar este usuário.";
+  }
+}
+
 export function AgendaProvider({ children }: { children: ReactNode }) {
   const isDemo = !isSupabaseConfigured();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const profileReady = useRef(false);
   const [loading, setLoading] = useState(true);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -92,6 +103,13 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     setCustomers(next.customers);
     setBlockedPeriods(next.blockedPeriods);
   }, []);
+
+  const ensureProfile = useCallback(async () => {
+    if (isDemo || profileReady.current) return;
+    const response = await fetch("/api/profile/bootstrap", { method: "POST" });
+    if (!response.ok) throw new Error(await readJsonMessage(response));
+    profileReady.current = true;
+  }, [isDemo]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -105,8 +123,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           setCustomers(parsed.customers);
           setBlockedPeriods(parsed.blockedPeriods);
         } catch {
-          const fallback = initialDemo();
-          persistDemo(fallback);
+          persistDemo(initialDemo());
         }
       } else {
         persistDemo(initialDemo());
@@ -114,6 +131,8 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+
+    await ensureProfile();
 
     const [reservationResult, customerResult, paymentResult, blockResult] = await Promise.all([
       supabase.from("reservations").select("*").order("start_date"),
@@ -138,7 +157,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     );
     setBlockedPeriods((blockResult.data ?? []) as BlockedPeriod[]);
     setLoading(false);
-  }, [isDemo, persistDemo, supabase]);
+  }, [ensureProfile, isDemo, persistDemo, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -163,77 +182,58 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           customer: customers.find((customer) => customer.id === input.customer_id) ?? null,
           payments: [],
         };
-        persistDemo({
-          reservations: [...reservations, created],
-          customers,
-          blockedPeriods,
-        });
+        persistDemo({ reservations: [...reservations, created], customers, blockedPeriods });
         return created;
       }
 
-      const { data, error } = await supabase
-        .from("reservations")
-        .insert(input)
-        .select("*")
-        .single();
+      await ensureProfile();
+      const { data, error } = await supabase.from("reservations").insert(input).select("*").single();
       if (error) throw new Error(error.message);
       await refresh();
       return data as Reservation;
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const updateReservation = useCallback(
     async (id: string, input: Partial<ReservationInput>) => {
       if (isDemo || !supabase) {
         const next = reservations.map((reservation) =>
-          reservation.id === id
-            ? { ...reservation, ...input, updated_at: new Date().toISOString() }
-            : reservation
+          reservation.id === id ? { ...reservation, ...input, updated_at: new Date().toISOString() } : reservation
         );
         persistDemo({ reservations: next, customers, blockedPeriods });
         return;
       }
 
+      await ensureProfile();
       const { error } = await supabase.from("reservations").update(input).eq("id", id);
       if (error) throw new Error(error.message);
       await refresh();
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const createCustomer = useCallback(
     async (input: CustomerInput) => {
       if (isDemo || !supabase) {
-        const created: Customer = {
-          ...input,
-          id: randomId("customer"),
-          created_at: new Date().toISOString(),
-        };
+        const created: Customer = { ...input, id: randomId("customer"), created_at: new Date().toISOString() };
         persistDemo({ reservations, customers: [...customers, created], blockedPeriods });
         return created;
       }
 
-      const { data, error } = await supabase
-        .from("customers")
-        .insert(input)
-        .select("*")
-        .single();
+      await ensureProfile();
+      const { data, error } = await supabase.from("customers").insert(input).select("*").single();
       if (error) throw new Error(error.message);
       await refresh();
       return data as Customer;
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const addPayment = useCallback(
     async (input: PaymentInput) => {
       if (isDemo || !supabase) {
-        const created: Payment = {
-          ...input,
-          id: randomId("payment"),
-          created_at: new Date().toISOString(),
-        };
+        const created: Payment = { ...input, id: randomId("payment"), created_at: new Date().toISOString() };
         const nextReservations = reservations.map((reservation) =>
           reservation.id === input.reservation_id
             ? { ...reservation, payments: [...(reservation.payments ?? []), created] }
@@ -243,54 +243,45 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         return created;
       }
 
+      await ensureProfile();
       const { data, error } = await supabase.from("payments").insert(input).select("*").single();
       if (error) throw new Error(error.message);
       await refresh();
       return data as Payment;
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const addBlockedPeriod = useCallback(
     async (input: BlockedPeriodInput) => {
       if (isDemo || !supabase) {
-        const created: BlockedPeriod = {
-          ...input,
-          id: randomId("block"),
-          created_at: new Date().toISOString(),
-        };
+        const created: BlockedPeriod = { ...input, id: randomId("block"), created_at: new Date().toISOString() };
         persistDemo({ reservations, customers, blockedPeriods: [...blockedPeriods, created] });
         return created;
       }
 
-      const { data, error } = await supabase
-        .from("blocked_periods")
-        .insert(input)
-        .select("*")
-        .single();
+      await ensureProfile();
+      const { data, error } = await supabase.from("blocked_periods").insert(input).select("*").single();
       if (error) throw new Error(error.message);
       await refresh();
       return data as BlockedPeriod;
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const removeBlockedPeriod = useCallback(
     async (id: string) => {
       if (isDemo || !supabase) {
-        persistDemo({
-          reservations,
-          customers,
-          blockedPeriods: blockedPeriods.filter((period) => period.id !== id),
-        });
+        persistDemo({ reservations, customers, blockedPeriods: blockedPeriods.filter((period) => period.id !== id) });
         return;
       }
 
+      await ensureProfile();
       const { error } = await supabase.from("blocked_periods").delete().eq("id", id);
       if (error) throw new Error(error.message);
       await refresh();
     },
-    [blockedPeriods, customers, isDemo, persistDemo, refresh, reservations, supabase]
+    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
   );
 
   const value = useMemo<AgendaContextValue>(
@@ -308,20 +299,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       addBlockedPeriod,
       removeBlockedPeriod,
     }),
-    [
-      addBlockedPeriod,
-      addPayment,
-      blockedPeriods,
-      createCustomer,
-      createReservation,
-      customers,
-      isDemo,
-      loading,
-      refresh,
-      removeBlockedPeriod,
-      reservations,
-      updateReservation,
-    ]
+    [addBlockedPeriod, addPayment, blockedPeriods, createCustomer, createReservation, customers, isDemo, loading, refresh, removeBlockedPeriod, reservations, updateReservation]
   );
 
   return <AgendaContext.Provider value={value}>{children}</AgendaContext.Provider>;
