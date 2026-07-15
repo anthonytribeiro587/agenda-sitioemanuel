@@ -37,14 +37,18 @@ type AgendaContextValue = {
   refresh: () => Promise<void>;
   createReservation: (input: ReservationInput) => Promise<Reservation>;
   updateReservation: (id: string, input: Partial<ReservationInput>) => Promise<void>;
+  deleteReservation: (id: string) => Promise<void>;
   createCustomer: (input: CustomerInput) => Promise<Customer>;
+  updateCustomer: (id: string, input: CustomerInput) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
   addPayment: (input: PaymentInput) => Promise<Payment>;
+  deletePayment: (id: string, reservationId: string) => Promise<void>;
   addBlockedPeriod: (input: BlockedPeriodInput) => Promise<BlockedPeriod>;
   removeBlockedPeriod: (id: string) => Promise<void>;
 };
 
 const AgendaContext = createContext<AgendaContextValue | null>(null);
-const STORAGE_KEY = "agenda-sitio-emanuel-demo-v2";
+const STORAGE_KEY = "agenda-sitio-emanuel-demo-v3";
 
 type StoredDemo = {
   reservations: Reservation[];
@@ -56,19 +60,47 @@ function randomId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+function normalizePayment(payment: Payment): Payment {
+  return { ...payment, amount: Number(payment.amount ?? 0) };
+}
+
+function normalizeReservation(reservation: Reservation): Reservation {
+  return {
+    ...reservation,
+    total_amount: Number(reservation.total_amount ?? 0),
+    guests_estimated: Number(reservation.guests_estimated ?? 1),
+    guests_confirmed:
+      reservation.guests_confirmed === null || reservation.guests_confirmed === undefined
+        ? null
+        : Number(reservation.guests_confirmed),
+    payments: (reservation.payments ?? []).map(normalizePayment),
+  };
+}
+
 function hydrateReservations(
   reservations: Reservation[],
   customers: Customer[],
   payments: Payment[]
 ) {
-  return reservations.map((reservation) => ({
-    ...reservation,
-    customer:
-      customers.find((customer) => customer.id === reservation.customer_id) ??
-      reservation.customer ??
-      null,
-    payments: payments.filter((payment) => payment.reservation_id === reservation.id),
-  }));
+  const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+  const paymentsByReservation = new Map<string, Payment[]>();
+
+  payments.forEach((payment) => {
+    const normalized = normalizePayment(payment);
+    const current = paymentsByReservation.get(payment.reservation_id) ?? [];
+    current.push(normalized);
+    paymentsByReservation.set(payment.reservation_id, current);
+  });
+
+  return reservations.map((reservation) =>
+    normalizeReservation({
+      ...reservation,
+      customer: reservation.customer_id
+        ? customerById.get(reservation.customer_id) ?? reservation.customer ?? null
+        : null,
+      payments: paymentsByReservation.get(reservation.id) ?? [],
+    })
+  );
 }
 
 function initialDemo(): StoredDemo {
@@ -92,17 +124,30 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   const isDemo = !isSupabaseConfigured();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const profileReady = useRef(false);
+  const loaded = useRef(false);
+  const reservationsRef = useRef<Reservation[]>([]);
+  const customersRef = useRef<Customer[]>([]);
+  const blockedPeriodsRef = useRef<BlockedPeriod[]>([]);
   const [loading, setLoading] = useState(true);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [blockedPeriods, setBlockedPeriods] = useState<BlockedPeriod[]>([]);
 
-  const persistDemo = useCallback((next: StoredDemo) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    setReservations(next.reservations);
-    setCustomers(next.customers);
-    setBlockedPeriods(next.blockedPeriods);
-  }, []);
+  const applySnapshot = useCallback(
+    (next: StoredDemo, persist = isDemo) => {
+      reservationsRef.current = next.reservations;
+      customersRef.current = next.customers;
+      blockedPeriodsRef.current = next.blockedPeriods;
+      setReservations(next.reservations);
+      setCustomers(next.customers);
+      setBlockedPeriods(next.blockedPeriods);
+
+      if (persist) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      }
+    },
+    [isDemo]
+  );
 
   const ensureProfile = useCallback(async () => {
     if (isDemo || profileReady.current) return;
@@ -112,57 +157,62 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   }, [isDemo]);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    const isInitialLoad = !loaded.current;
+    if (isInitialLoad) setLoading(true);
 
-    if (isDemo || !supabase) {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw) as StoredDemo;
-          setReservations(parsed.reservations);
-          setCustomers(parsed.customers);
-          setBlockedPeriods(parsed.blockedPeriods);
-        } catch {
-          persistDemo(initialDemo());
+    try {
+      if (isDemo || !supabase) {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          try {
+            applySnapshot(JSON.parse(raw) as StoredDemo);
+          } catch {
+            applySnapshot(initialDemo());
+          }
+        } else {
+          applySnapshot(initialDemo());
         }
-      } else {
-        persistDemo(initialDemo());
+        return;
       }
+
+      await ensureProfile();
+
+      const [reservationResult, customerResult, paymentResult, blockResult] = await Promise.all([
+        supabase.from("reservations").select("*").order("start_date"),
+        supabase.from("customers").select("*").order("name"),
+        supabase.from("payments").select("*").order("payment_date", { ascending: false }),
+        supabase.from("blocked_periods").select("*").order("start_date"),
+      ]);
+
+      const error =
+        reservationResult.error || customerResult.error || paymentResult.error || blockResult.error;
+      if (error) throw new Error(error.message);
+
+      const fetchedCustomers = (customerResult.data ?? []) as Customer[];
+      const fetchedPayments = (paymentResult.data ?? []) as Payment[];
+      applySnapshot(
+        {
+          customers: fetchedCustomers,
+          reservations: hydrateReservations(
+            (reservationResult.data ?? []) as Reservation[],
+            fetchedCustomers,
+            fetchedPayments
+          ),
+          blockedPeriods: (blockResult.data ?? []) as BlockedPeriod[],
+        },
+        false
+      );
+    } finally {
+      loaded.current = true;
       setLoading(false);
-      return;
     }
-
-    await ensureProfile();
-
-    const [reservationResult, customerResult, paymentResult, blockResult] = await Promise.all([
-      supabase.from("reservations").select("*").order("start_date"),
-      supabase.from("customers").select("*").order("name"),
-      supabase.from("payments").select("*").order("payment_date", { ascending: false }),
-      supabase.from("blocked_periods").select("*").order("start_date"),
-    ]);
-
-    const error =
-      reservationResult.error || customerResult.error || paymentResult.error || blockResult.error;
-    if (error) throw new Error(error.message);
-
-    const fetchedCustomers = (customerResult.data ?? []) as Customer[];
-    const fetchedPayments = (paymentResult.data ?? []) as Payment[];
-    setCustomers(fetchedCustomers);
-    setReservations(
-      hydrateReservations(
-        (reservationResult.data ?? []) as Reservation[],
-        fetchedCustomers,
-        fetchedPayments
-      )
-    );
-    setBlockedPeriods((blockResult.data ?? []) as BlockedPeriod[]);
-    setLoading(false);
-  }, [ensureProfile, isDemo, persistDemo, supabase]);
+  }, [applySnapshot, ensureProfile, isDemo, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       refresh().catch((error) => {
         console.error(error);
+        loaded.current = true;
         setLoading(false);
       });
     }, 0);
@@ -172,116 +222,285 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
 
   const createReservation = useCallback(
     async (input: ReservationInput) => {
+      const now = new Date().toISOString();
+      let created: Reservation;
+
       if (isDemo || !supabase) {
-        const now = new Date().toISOString();
-        const created: Reservation = {
+        created = normalizeReservation({
           ...input,
           id: randomId("reservation"),
           created_at: now,
           updated_at: now,
-          customer: customers.find((customer) => customer.id === input.customer_id) ?? null,
+          customer: input.customer_id
+            ? customersRef.current.find((customer) => customer.id === input.customer_id) ?? null
+            : null,
           payments: [],
-        };
-        persistDemo({ reservations: [...reservations, created], customers, blockedPeriods });
-        return created;
+        });
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase.from("reservations").insert(input).select("*").single();
+        if (error) throw new Error(error.message);
+        created = normalizeReservation({
+          ...(data as Reservation),
+          customer: input.customer_id
+            ? customersRef.current.find((customer) => customer.id === input.customer_id) ?? null
+            : null,
+          payments: [],
+        });
       }
 
-      await ensureProfile();
-      const { data, error } = await supabase.from("reservations").insert(input).select("*").single();
-      if (error) throw new Error(error.message);
-      await refresh();
-      return data as Reservation;
+      applySnapshot({
+        reservations: [...reservationsRef.current, created].sort((a, b) =>
+          a.start_date.localeCompare(b.start_date)
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+      return created;
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const updateReservation = useCallback(
     async (id: string, input: Partial<ReservationInput>) => {
+      const current = reservationsRef.current.find((reservation) => reservation.id === id);
+      if (!current) throw new Error("Reserva não encontrada.");
+      let updated: Reservation;
+
       if (isDemo || !supabase) {
-        const next = reservations.map((reservation) =>
-          reservation.id === id ? { ...reservation, ...input, updated_at: new Date().toISOString() } : reservation
-        );
-        persistDemo({ reservations: next, customers, blockedPeriods });
-        return;
+        updated = normalizeReservation({
+          ...current,
+          ...input,
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase
+          .from("reservations")
+          .update(input)
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (error) throw new Error(error.message);
+        const row = data as Reservation;
+        updated = normalizeReservation({
+          ...current,
+          ...row,
+          customer: row.customer_id
+            ? customersRef.current.find((customer) => customer.id === row.customer_id) ?? null
+            : null,
+          payments: current.payments ?? [],
+        });
       }
 
-      await ensureProfile();
-      const { error } = await supabase.from("reservations").update(input).eq("id", id);
-      if (error) throw new Error(error.message);
-      await refresh();
+      applySnapshot({
+        reservations: reservationsRef.current.map((reservation) =>
+          reservation.id === id ? updated : reservation
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
+  const deleteReservation = useCallback(
+    async (id: string) => {
+      if (!isDemo && supabase) {
+        await ensureProfile();
+        const { error } = await supabase.from("reservations").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+
+      applySnapshot({
+        reservations: reservationsRef.current.filter((reservation) => reservation.id !== id),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const createCustomer = useCallback(
     async (input: CustomerInput) => {
+      let created: Customer;
+
       if (isDemo || !supabase) {
-        const created: Customer = { ...input, id: randomId("customer"), created_at: new Date().toISOString() };
-        persistDemo({ reservations, customers: [...customers, created], blockedPeriods });
-        return created;
+        created = { ...input, id: randomId("customer"), created_at: new Date().toISOString() };
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase.from("customers").insert(input).select("*").single();
+        if (error) throw new Error(error.message);
+        created = data as Customer;
       }
 
-      await ensureProfile();
-      const { data, error } = await supabase.from("customers").insert(input).select("*").single();
-      if (error) throw new Error(error.message);
-      await refresh();
-      return data as Customer;
+      applySnapshot({
+        reservations: reservationsRef.current,
+        customers: [...customersRef.current, created].sort((a, b) => a.name.localeCompare(b.name)),
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+      return created;
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
+  const updateCustomer = useCallback(
+    async (id: string, input: CustomerInput) => {
+      let updated: Customer;
+
+      if (isDemo || !supabase) {
+        const current = customersRef.current.find((customer) => customer.id === id);
+        if (!current) throw new Error("Cliente não encontrado.");
+        updated = { ...current, ...input };
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase
+          .from("customers")
+          .update(input)
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (error) throw new Error(error.message);
+        updated = data as Customer;
+      }
+
+      applySnapshot({
+        customers: customersRef.current
+          .map((customer) => (customer.id === id ? updated : customer))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+        reservations: reservationsRef.current.map((reservation) =>
+          reservation.customer_id === id ? { ...reservation, customer: updated } : reservation
+        ),
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
+  const deleteCustomer = useCallback(
+    async (id: string) => {
+      if (!isDemo && supabase) {
+        await ensureProfile();
+        const { error } = await supabase.from("customers").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+
+      applySnapshot({
+        customers: customersRef.current.filter((customer) => customer.id !== id),
+        reservations: reservationsRef.current.map((reservation) =>
+          reservation.customer_id === id
+            ? { ...reservation, customer_id: null, customer: null }
+            : reservation
+        ),
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const addPayment = useCallback(
     async (input: PaymentInput) => {
+      let created: Payment;
+
       if (isDemo || !supabase) {
-        const created: Payment = { ...input, id: randomId("payment"), created_at: new Date().toISOString() };
-        const nextReservations = reservations.map((reservation) =>
+        created = normalizePayment({
+          ...input,
+          id: randomId("payment"),
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase.from("payments").insert(input).select("*").single();
+        if (error) throw new Error(error.message);
+        created = normalizePayment(data as Payment);
+      }
+
+      applySnapshot({
+        reservations: reservationsRef.current.map((reservation) =>
           reservation.id === input.reservation_id
             ? { ...reservation, payments: [...(reservation.payments ?? []), created] }
             : reservation
-        );
-        persistDemo({ reservations: nextReservations, customers, blockedPeriods });
-        return created;
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+      return created;
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
+  const deletePayment = useCallback(
+    async (id: string, reservationId: string) => {
+      if (!isDemo && supabase) {
+        await ensureProfile();
+        const { error } = await supabase.from("payments").delete().eq("id", id);
+        if (error) throw new Error(error.message);
       }
 
-      await ensureProfile();
-      const { data, error } = await supabase.from("payments").insert(input).select("*").single();
-      if (error) throw new Error(error.message);
-      await refresh();
-      return data as Payment;
+      applySnapshot({
+        reservations: reservationsRef.current.map((reservation) =>
+          reservation.id === reservationId
+            ? {
+                ...reservation,
+                payments: (reservation.payments ?? []).filter((payment) => payment.id !== id),
+              }
+            : reservation
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const addBlockedPeriod = useCallback(
     async (input: BlockedPeriodInput) => {
+      let created: BlockedPeriod;
+
       if (isDemo || !supabase) {
-        const created: BlockedPeriod = { ...input, id: randomId("block"), created_at: new Date().toISOString() };
-        persistDemo({ reservations, customers, blockedPeriods: [...blockedPeriods, created] });
-        return created;
+        created = {
+          ...input,
+          id: randomId("block"),
+          created_at: new Date().toISOString(),
+        };
+      } else {
+        await ensureProfile();
+        const { data, error } = await supabase
+          .from("blocked_periods")
+          .insert(input)
+          .select("*")
+          .single();
+        if (error) throw new Error(error.message);
+        created = data as BlockedPeriod;
       }
 
-      await ensureProfile();
-      const { data, error } = await supabase.from("blocked_periods").insert(input).select("*").single();
-      if (error) throw new Error(error.message);
-      await refresh();
-      return data as BlockedPeriod;
+      applySnapshot({
+        reservations: reservationsRef.current,
+        customers: customersRef.current,
+        blockedPeriods: [...blockedPeriodsRef.current, created].sort((a, b) =>
+          a.start_date.localeCompare(b.start_date)
+        ),
+      });
+      return created;
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const removeBlockedPeriod = useCallback(
     async (id: string) => {
-      if (isDemo || !supabase) {
-        persistDemo({ reservations, customers, blockedPeriods: blockedPeriods.filter((period) => period.id !== id) });
-        return;
+      if (!isDemo && supabase) {
+        await ensureProfile();
+        const { error } = await supabase.from("blocked_periods").delete().eq("id", id);
+        if (error) throw new Error(error.message);
       }
 
-      await ensureProfile();
-      const { error } = await supabase.from("blocked_periods").delete().eq("id", id);
-      if (error) throw new Error(error.message);
-      await refresh();
+      applySnapshot({
+        reservations: reservationsRef.current,
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current.filter((period) => period.id !== id),
+      });
     },
-    [blockedPeriods, customers, ensureProfile, isDemo, persistDemo, refresh, reservations, supabase]
+    [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
   const value = useMemo<AgendaContextValue>(
@@ -294,12 +513,33 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       refresh,
       createReservation,
       updateReservation,
+      deleteReservation,
       createCustomer,
+      updateCustomer,
+      deleteCustomer,
       addPayment,
+      deletePayment,
       addBlockedPeriod,
       removeBlockedPeriod,
     }),
-    [addBlockedPeriod, addPayment, blockedPeriods, createCustomer, createReservation, customers, isDemo, loading, refresh, removeBlockedPeriod, reservations, updateReservation]
+    [
+      addBlockedPeriod,
+      addPayment,
+      blockedPeriods,
+      createCustomer,
+      createReservation,
+      customers,
+      deleteCustomer,
+      deletePayment,
+      deleteReservation,
+      isDemo,
+      loading,
+      refresh,
+      removeBlockedPeriod,
+      reservations,
+      updateCustomer,
+      updateReservation,
+    ]
   );
 
   return <AgendaContext.Provider value={value}>{children}</AgendaContext.Provider>;

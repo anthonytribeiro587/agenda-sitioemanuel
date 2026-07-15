@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CalendarPlus2, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useAgenda } from "@/components/AgendaProvider";
 import { ReservationCard } from "@/components/ReservationCard";
 import type { ReservationStatus } from "@/lib/types";
@@ -18,10 +18,25 @@ const statuses: Array<{ value: "TODAS" | ReservationStatus; label: string }> = [
 export default function ReservasPage() {
   const { reservations, loading } = useAgenda();
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [status, setStatus] = useState<"TODAS" | ReservationStatus>("TODAS");
 
+  const counts = useMemo(() => {
+    const result: Record<"TODAS" | ReservationStatus, number> = {
+      TODAS: reservations.length,
+      PRE_RESERVA: 0,
+      CONFIRMADA: 0,
+      REALIZADA: 0,
+      CANCELADA: 0,
+    };
+    reservations.forEach((reservation) => {
+      result[reservation.status] += 1;
+    });
+    return result;
+  }, [reservations]);
+
   const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = deferredQuery.trim().toLowerCase();
     return reservations
       .filter((item) => status === "TODAS" || item.status === status)
       .filter((item) => {
@@ -32,28 +47,62 @@ export default function ReservasPage() {
           .includes(normalized);
       })
       .sort((a, b) => b.start_date.localeCompare(a.start_date));
-  }, [query, reservations, status]);
+  }, [deferredQuery, reservations, status]);
 
   return (
-    <main className="page">
-      <div className="page-head">
-        <div><h2>Reservas</h2><p>Encontre rapidamente qualquer pré-reserva, evento confirmado ou atendimento antigo.</p></div>
-        <div className="page-actions"><Link href="/reservas/nova" className="button button-primary"><CalendarPlus2 /> Nova reserva</Link></div>
+    <main className="page reservations-page">
+      <div className="page-head reservations-head">
+        <div>
+          <h2>Reservas</h2>
+          <p>Consulte, edite e acompanhe todos os eventos em um único lugar.</p>
+        </div>
+        <div className="page-actions">
+          <Link href="/agenda" className="button button-primary"><CalendarPlus2 /> Nova reserva</Link>
+        </div>
       </div>
-      <section className="panel">
-        <div className="panel-header"><div><h3 className="panel-title">Todos os registros</h3><p className="panel-subtitle">Use a busca pelo nome, igreja, telefone ou e-mail.</p></div></div>
-        <div className="panel-body">
-          <div className="filter-bar" style={{marginBottom:18}}>
-            <label className="search"><Search /><input className="input" placeholder="Buscar reserva..." value={query} onChange={(e)=>setQuery(e.target.value)} /></label>
-            <select className="select" value={status} onChange={(e)=>setStatus(e.target.value as "TODAS" | ReservationStatus)} style={{maxWidth:190}}>{statuses.map((item)=><option key={item.value} value={item.value}>{item.label}</option>)}</select>
-          </div>
-          {loading ? <div className="empty">Carregando reservas...</div> : (
-            <div className="reservation-list">
-              {filtered.length ? filtered.map((item)=><ReservationCard key={item.id} reservation={item} />) : <div className="empty">Nenhuma reserva encontrada com esses filtros.</div>}
-            </div>
-          )}
+
+      <section className="reservation-filter-panel">
+        <label className="search reservation-search">
+          <Search />
+          <input
+            className="input"
+            placeholder="Buscar por igreja, responsável ou telefone..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className="status-filter-tabs" role="tablist" aria-label="Filtrar reservas por situação">
+          {statuses.map((item) => (
+            <button
+              type="button"
+              key={item.value}
+              className={status === item.value ? "active" : ""}
+              onClick={() => setStatus(item.value)}
+            >
+              <span>{item.label}</span>
+              <strong>{counts[item.value]}</strong>
+            </button>
+          ))}
         </div>
       </section>
+
+      {loading ? (
+        <div className="reservation-list-skeleton">
+          <div className="skeleton-card" />
+          <div className="skeleton-card" />
+        </div>
+      ) : filtered.length ? (
+        <section className="reservation-list modern-reservation-list">
+          {filtered.map((item) => <ReservationCard key={item.id} reservation={item} />)}
+        </section>
+      ) : (
+        <section className="reservations-empty">
+          <CalendarPlus2 />
+          <h3>Nenhuma reserva encontrada</h3>
+          <p>Altere os filtros ou cadastre uma nova reserva pela agenda.</p>
+          <Link href="/agenda" className="button button-primary">Abrir agenda</Link>
+        </section>
+      )}
     </main>
   );
 }
