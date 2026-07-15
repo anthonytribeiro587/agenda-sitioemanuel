@@ -1,8 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import { CheckCircle2, MessageCircle, Save, WalletCards } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  Edit3,
+  History,
+  MessageCircle,
+  Save,
+  Trash2,
+  UserRound,
+  WalletCards,
+  XCircle,
+} from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAgenda } from "@/components/AgendaProvider";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -13,29 +27,113 @@ import {
   reservationBalance,
   whatsappUrl,
 } from "@/lib/format";
-import type { PaymentMethod, ReservationStatus } from "@/lib/types";
+import type { PaymentMethod, Reservation, ReservationStatus } from "@/lib/types";
+
+type DetailTab = "resumo" | "financeiro" | "dados" | "historico";
+type PendingAction = "cancel" | "delete" | null;
+
+type ReservationDraft = {
+  church_name: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  start_date: string;
+  end_date: string;
+  guests_estimated: string;
+  guests_confirmed: string;
+  package_name: string;
+  total_amount: string;
+  notes: string;
+};
+
+function draftFromReservation(reservation: Reservation): ReservationDraft {
+  return {
+    church_name: reservation.church_name,
+    contact_name: reservation.contact_name,
+    phone: reservation.phone,
+    email: reservation.email,
+    start_date: reservation.start_date,
+    end_date: reservation.end_date,
+    guests_estimated: String(reservation.guests_estimated),
+    guests_confirmed: reservation.guests_confirmed ? String(reservation.guests_confirmed) : "",
+    package_name: reservation.package_name,
+    total_amount: reservation.total_amount > 0 ? String(reservation.total_amount) : "",
+    notes: reservation.notes,
+  };
+}
+
+const tabs: Array<{ value: DetailTab; label: string; icon: typeof CalendarDays }> = [
+  { value: "resumo", label: "Resumo", icon: CalendarDays },
+  { value: "financeiro", label: "Financeiro", icon: CircleDollarSign },
+  { value: "dados", label: "Dados", icon: Edit3 },
+  { value: "historico", label: "Histórico", icon: History },
+];
 
 export default function ReservationDetailsPage() {
   const params = useParams<{ id: string }>();
-  const { reservations, loading, updateReservation, addPayment } = useAgenda();
+  const router = useRouter();
+  const {
+    reservations,
+    loading,
+    updateReservation,
+    deleteReservation,
+    addPayment,
+    deletePayment,
+  } = useAgenda();
 
   const reservation = useMemo(
     () => reservations.find((item) => item.id === params.id) ?? null,
     [params.id, reservations]
   );
-
+  const [activeTab, setActiveTab] = useState<DetailTab>("resumo");
+  const [drafts, setDrafts] = useState<Record<string, ReservationDraft>>({});
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<PaymentMethod>("PIX");
   const [notes, setNotes] = useState("");
-  const [combinedValues, setCombinedValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [paymentToDelete, setPaymentToDelete] = useState<string | null>(null);
+
+  const historyItems = useMemo(() => {
+    if (!reservation) return [];
+
+    const paymentItems = (reservation.payments ?? []).map((payment) => ({
+      id: `payment-${payment.id}`,
+      date: payment.payment_date,
+      title: `${formatCurrency(payment.amount)} recebido`,
+      description: `${payment.method}${payment.notes ? ` • ${payment.notes}` : ""}`,
+      tone: "payment" as const,
+    }));
+
+    return [
+      {
+        id: "created",
+        date: reservation.created_at.slice(0, 10),
+        title: "Reserva cadastrada",
+        description: `Pré-reserva criada para ${reservation.church_name}.`,
+        tone: "created" as const,
+      },
+      ...paymentItems,
+      {
+        id: "status",
+        date: reservation.updated_at.slice(0, 10),
+        title: "Situação atualizada",
+        description: `Situação atual: ${reservation.status.replace("_", " ").toLowerCase()}.`,
+        tone: "status" as const,
+      },
+    ].sort((a, b) => b.date.localeCompare(a.date));
+  }, [reservation]);
 
   if (loading) {
     return (
       <main className="page reservation-detail-page">
-        <div className="panel"><div className="panel-body">Carregando reserva...</div></div>
+        <div className="detail-skeleton">
+          <div className="skeleton-line wide" />
+          <div className="skeleton-line" />
+          <div className="skeleton-card" />
+        </div>
       </main>
     );
   }
@@ -49,17 +147,24 @@ export default function ReservationDetailsPage() {
   }
 
   const currentReservation = reservation;
+  const draft = drafts[currentReservation.id] ?? draftFromReservation(currentReservation);
   const paid = paymentTotal(currentReservation.payments);
   const hasCombinedValue = currentReservation.total_amount > 0;
   const balance = reservationBalance(currentReservation);
-  const combinedValue = combinedValues[currentReservation.id] ?? (currentReservation.total_amount > 0 ? String(currentReservation.total_amount) : "");
+
+  function updateDraft<K extends keyof ReservationDraft>(key: K, value: ReservationDraft[K]) {
+    setDrafts((current) => ({
+      ...current,
+      [currentReservation.id]: { ...draft, [key]: value },
+    }));
+  }
 
   async function changeStatus(status: ReservationStatus) {
     setSaving(true);
     setFeedback("");
     try {
       await updateReservation(currentReservation.id, { status });
-      setFeedback("Situação atualizada.");
+      setFeedback("Situação atualizada com sucesso.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Não foi possível alterar a situação.");
     } finally {
@@ -69,7 +174,7 @@ export default function ReservationDetailsPage() {
 
   async function saveCombinedValue(event: React.FormEvent) {
     event.preventDefault();
-    const value = Number(combinedValue || 0);
+    const value = Number(draft.total_amount || 0);
 
     if (value > 0 && value < paid) {
       setFeedback("O valor combinado não pode ser menor que o total já recebido.");
@@ -88,6 +193,48 @@ export default function ReservationDetailsPage() {
     }
   }
 
+  async function saveReservationData(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (draft.end_date < draft.start_date) {
+      setFeedback("A data final não pode ser anterior à data inicial.");
+      return;
+    }
+
+    const totalAmount = Number(draft.total_amount || 0);
+    if (totalAmount > 0 && totalAmount < paid) {
+      setFeedback("O valor combinado não pode ser menor que o total já recebido.");
+      return;
+    }
+
+    setSaving(true);
+    setFeedback("");
+    try {
+      await updateReservation(currentReservation.id, {
+        customer_id: currentReservation.customer_id,
+        church_name: draft.church_name.trim(),
+        contact_name: draft.contact_name.trim(),
+        phone: draft.phone.trim(),
+        email: draft.email.trim(),
+        start_date: draft.start_date,
+        end_date: draft.end_date,
+        guests_estimated: Number(draft.guests_estimated || 1),
+        guests_confirmed: draft.guests_confirmed ? Number(draft.guests_confirmed) : null,
+        package_name: draft.package_name.trim() || "A definir",
+        total_amount: totalAmount,
+        status: currentReservation.status,
+        notes: draft.notes.trim(),
+      });
+      setFeedback("Dados da reserva atualizados.");
+      setActiveTab("resumo");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível editar a reserva.";
+      setFeedback(message.includes("overlap") ? "O novo período entra em conflito com outra reserva." : message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submitPayment(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -99,7 +246,7 @@ export default function ReservationDetailsPage() {
         amount: Number(amount),
         payment_date: date,
         method,
-        notes,
+        notes: notes.trim(),
       });
       setAmount("");
       setNotes("");
@@ -111,145 +258,198 @@ export default function ReservationDetailsPage() {
     }
   }
 
+  async function confirmPendingAction() {
+    if (!pendingAction) return;
+    setSaving(true);
+    setFeedback("");
+
+    try {
+      if (pendingAction === "cancel") {
+        await updateReservation(currentReservation.id, { status: "CANCELADA" });
+        setFeedback("Reserva cancelada. O período voltou a ficar disponível.");
+        setPendingAction(null);
+        return;
+      }
+
+      await deleteReservation(currentReservation.id);
+      router.replace("/reservas");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível concluir a ação.");
+      setPendingAction(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDeletePayment() {
+    if (!paymentToDelete) return;
+    setSaving(true);
+    try {
+      await deletePayment(paymentToDelete, currentReservation.id);
+      setFeedback("Pagamento removido.");
+      setPaymentToDelete(null);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível remover o pagamento.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <main className="page reservation-detail-page">
-      <div className="page-head reservation-detail-head">
-        <div>
-          <div className="detail-status"><StatusBadge status={currentReservation.status} /></div>
-          <h2>{currentReservation.church_name}</h2>
+    <main className="page reservation-detail-page modern-detail-page">
+      <header className="modern-detail-header">
+        <div className="modern-detail-title">
+          <StatusBadge status={currentReservation.status} />
+          <h1>{currentReservation.church_name}</h1>
           <p>{formatRange(currentReservation.start_date, currentReservation.end_date)} • {currentReservation.contact_name}</p>
         </div>
 
-        <div className="page-actions">
-          <a className="button button-ghost" href={whatsappUrl(currentReservation)} target="_blank" rel="noreferrer">
+        <div className="modern-detail-actions">
+          <a className="button button-secondary" href={whatsappUrl(currentReservation)} target="_blank" rel="noreferrer">
             <MessageCircle /> WhatsApp
           </a>
+          <button className="button button-secondary" type="button" onClick={() => setActiveTab("dados")}>
+            <Edit3 /> Editar
+          </button>
           {currentReservation.status === "PRE_RESERVA" ? (
-            <button className="button button-primary" onClick={() => changeStatus("CONFIRMADA")} disabled={saving}>
+            <button className="button button-primary" type="button" onClick={() => void changeStatus("CONFIRMADA")} disabled={saving}>
               <CheckCircle2 /> Confirmar
             </button>
           ) : null}
         </div>
-      </div>
+      </header>
 
-      {feedback ? <div className="detail-feedback">{feedback}</div> : null}
+      {feedback ? <div className="detail-feedback" role="status">{feedback}</div> : null}
 
-      <div className="detail-grid">
-        <div className="detail-main-column">
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">Dados da reserva</h3>
-                <p className="panel-subtitle">Tudo que foi combinado com o responsável.</p>
-              </div>
-            </div>
+      <nav className="detail-tabs" aria-label="Seções da reserva">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              type="button"
+              key={tab.value}
+              className={activeTab === tab.value ? "active" : ""}
+              onClick={() => setActiveTab(tab.value)}
+            >
+              <Icon /> {tab.label}
+            </button>
+          );
+        })}
+      </nav>
 
-            <div className="panel-body">
-              <div className="info-grid">
-                <div className="info-item"><span>Responsável</span><strong>{currentReservation.contact_name}</strong></div>
-                <div className="info-item"><span>WhatsApp</span><strong>{currentReservation.phone}</strong></div>
-                <div className="info-item"><span>E-mail</span><strong>{currentReservation.email || "Não informado"}</strong></div>
-                <div className="info-item"><span>Período</span><strong>{formatRange(currentReservation.start_date, currentReservation.end_date)}</strong></div>
-                <div className="info-item"><span>Pessoas estimadas</span><strong>{currentReservation.guests_estimated}</strong></div>
-                <div className="info-item"><span>Pessoas confirmadas</span><strong>{currentReservation.guests_confirmed ?? "A confirmar"}</strong></div>
-                <div className="info-item"><span>Cardápio / pacote</span><strong>{currentReservation.package_name}</strong></div>
-                <div className="info-item"><span>Cadastro</span><strong>{formatDate(currentReservation.created_at.slice(0, 10))}</strong></div>
-              </div>
-
-              <div className="form-section detail-notes">
-                <h3>Observações</h3>
-                <p>{currentReservation.notes || "Nenhuma observação registrada."}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">Pagamentos registrados</h3>
-                <p className="panel-subtitle">Histórico do sinal e das parcelas recebidas.</p>
-              </div>
-            </div>
-
-            <div className="panel-body">
-              {(currentReservation.payments ?? []).length ? (
-                [...(currentReservation.payments ?? [])]
-                  .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
-                  .map((payment) => (
-                    <div key={payment.id} className="payment-row">
-                      <div>
-                        <strong>{formatCurrency(payment.amount)}</strong>
-                        <span>{formatDate(payment.payment_date)} • {payment.method}</span>
-                      </div>
-                      <span>{payment.notes || "Pagamento"}</span>
-                    </div>
-                  ))
-              ) : (
-                <div className="empty"><WalletCards />Nenhum pagamento registrado.</div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        <div className="detail-side-column">
-          <section className="panel">
-            <div className="panel-body">
-              <div className="finance-summary">
-                <div className="finance-summary-title">Resumo financeiro</div>
-                <div className="finance-summary-row">
+      <section className="detail-tab-content">
+        {activeTab === "resumo" ? (
+          <div className="summary-layout">
+            <div className="summary-main">
+              <div className="detail-metrics">
+                <article className="detail-metric">
                   <span>Valor combinado</span>
                   <strong>{hasCombinedValue ? formatCurrency(currentReservation.total_amount) : "A definir"}</strong>
-                </div>
-                <div className="finance-summary-row">
+                </article>
+                <article className="detail-metric">
                   <span>Total recebido</span>
                   <strong>{formatCurrency(paid)}</strong>
-                </div>
-                <div className="finance-summary-row total">
+                </article>
+                <article className="detail-metric emphasis">
                   <span>Saldo pendente</span>
                   <strong>{hasCombinedValue ? formatCurrency(balance) : "A definir"}</strong>
-                </div>
+                </article>
               </div>
-            </div>
-          </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">Valor combinado</h3>
-                <p className="panel-subtitle">Preencha quando o valor final do evento estiver definido.</p>
-              </div>
+              <section className="detail-section-card">
+                <div className="detail-section-heading">
+                  <UserRound />
+                  <div><h2>Contato e evento</h2><p>Informações principais para o atendimento.</p></div>
+                </div>
+                <div className="summary-info-grid">
+                  <div><span>Responsável</span><strong>{currentReservation.contact_name}</strong></div>
+                  <div><span>WhatsApp</span><strong>{currentReservation.phone}</strong></div>
+                  <div><span>E-mail</span><strong>{currentReservation.email || "Não informado"}</strong></div>
+                  <div><span>Período</span><strong>{formatRange(currentReservation.start_date, currentReservation.end_date)}</strong></div>
+                  <div><span>Pessoas estimadas</span><strong>{currentReservation.guests_estimated}</strong></div>
+                  <div><span>Pessoas confirmadas</span><strong>{currentReservation.guests_confirmed ?? "A confirmar"}</strong></div>
+                  <div><span>Cardápio / pacote</span><strong>{currentReservation.package_name || "A definir"}</strong></div>
+                  <div><span>Cadastrada em</span><strong>{formatDate(currentReservation.created_at.slice(0, 10))}</strong></div>
+                </div>
+              </section>
+
+              <section className="detail-section-card detail-observation-card">
+                <div className="detail-section-heading">
+                  <Clock3 />
+                  <div><h2>Observações</h2><p>Detalhes importantes combinados com o grupo.</p></div>
+                </div>
+                <p>{currentReservation.notes || "Nenhuma observação registrada."}</p>
+              </section>
             </div>
-            <div className="panel-body">
-              <form onSubmit={saveCombinedValue} className="single-column-form">
+
+            <aside className="summary-side">
+              <section className="detail-section-card quick-status-card">
+                <h2>Situação da reserva</h2>
+                <p>Atualize o andamento sem precisar editar todos os dados.</p>
+                <select
+                  className="select"
+                  value={currentReservation.status}
+                  onChange={(event) => void changeStatus(event.target.value as ReservationStatus)}
+                  disabled={saving}
+                >
+                  <option value="PRE_RESERVA">Pré-reserva</option>
+                  <option value="CONFIRMADA">Confirmada</option>
+                  <option value="REALIZADA">Realizada</option>
+                  <option value="CANCELADA">Cancelada</option>
+                </select>
+              </section>
+
+              <section className="detail-section-card quick-actions-card">
+                <h2>Ações rápidas</h2>
+                <button className="quick-detail-action" type="button" onClick={() => setActiveTab("financeiro")}>
+                  <WalletCards /><span><strong>Registrar pagamento</strong><small>Adicionar sinal ou parcela.</small></span>
+                </button>
+                <button className="quick-detail-action" type="button" onClick={() => setActiveTab("dados")}>
+                  <Edit3 /><span><strong>Editar dados</strong><small>Datas, pessoas e informações.</small></span>
+                </button>
+                <button className="quick-detail-action" type="button" onClick={() => setActiveTab("historico")}>
+                  <History /><span><strong>Ver histórico</strong><small>Pagamentos e alterações.</small></span>
+                </button>
+              </section>
+            </aside>
+          </div>
+        ) : null}
+
+        {activeTab === "financeiro" ? (
+          <div className="finance-tab-layout">
+            <section className="detail-section-card finance-overview-card">
+              <div className="detail-section-heading">
+                <CircleDollarSign />
+                <div><h2>Resumo financeiro</h2><p>Valor negociado, recebimentos e saldo.</p></div>
+              </div>
+              <div className="finance-big-summary">
+                <div><span>Combinado</span><strong>{hasCombinedValue ? formatCurrency(currentReservation.total_amount) : "A definir"}</strong></div>
+                <div><span>Recebido</span><strong>{formatCurrency(paid)}</strong></div>
+                <div className="balance"><span>Saldo</span><strong>{hasCombinedValue ? formatCurrency(balance) : "A definir"}</strong></div>
+              </div>
+              <form className="compact-finance-form" onSubmit={saveCombinedValue}>
                 <label className="field">
-                  <span className="label">Valor final negociado</span>
+                  <span className="label">Valor final combinado</span>
                   <input
                     className="input"
                     type="number"
                     min="0"
                     step="0.01"
-                    value={combinedValue}
-                    onChange={(event) => setCombinedValues((current) => ({ ...current, [currentReservation.id]: event.target.value }))}
-                    placeholder="Ex.: 12000,00"
+                    value={draft.total_amount}
+                    onChange={(event) => updateDraft("total_amount", event.target.value)}
+                    placeholder="Preencher após a negociação"
                   />
                 </label>
-                <button className="button button-primary" disabled={saving}>
-                  <Save /> {saving ? "Salvando..." : "Salvar valor combinado"}
-                </button>
+                <button className="button button-primary" disabled={saving}><Save /> Salvar valor</button>
               </form>
-            </div>
-          </section>
+            </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">Registrar pagamento</h3>
-                <p className="panel-subtitle">O sinal e os demais recebimentos ficam no histórico.</p>
+            <section className="detail-section-card payment-form-card">
+              <div className="detail-section-heading">
+                <WalletCards />
+                <div><h2>Novo pagamento</h2><p>Registre o sinal ou qualquer valor recebido.</p></div>
               </div>
-            </div>
-
-            <div className="panel-body">
-              <form onSubmit={submitPayment} className="single-column-form">
+              <form onSubmit={submitPayment} className="payment-form-grid">
                 <label className="field">
                   <span className="label">Valor recebido</span>
                   <input className="input" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required />
@@ -268,40 +468,127 @@ export default function ReservationDetailsPage() {
                     <option value="OUTRO">Outro</option>
                   </select>
                 </label>
-                <label className="field">
+                <label className="field field-full">
                   <span className="label">Observação</span>
                   <input className="input" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Ex.: sinal inicial" />
                 </label>
-                <button className="button button-primary" disabled={saving}>
-                  <Save /> {saving ? "Salvando..." : "Registrar pagamento"}
-                </button>
+                <button className="button button-primary field-full" disabled={saving}><Save /> Registrar pagamento</button>
               </form>
-            </div>
-          </section>
+            </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h3 className="panel-title">Alterar situação</h3>
-                <p className="panel-subtitle">Atualize o andamento do evento.</p>
+            <section className="detail-section-card payment-history-card">
+              <div className="detail-section-heading">
+                <History />
+                <div><h2>Pagamentos registrados</h2><p>Histórico completo dos recebimentos.</p></div>
               </div>
+              {(currentReservation.payments ?? []).length ? (
+                <div className="modern-payment-list">
+                  {[...(currentReservation.payments ?? [])]
+                    .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
+                    .map((payment) => (
+                      <article className="modern-payment-row" key={payment.id}>
+                        <div className="payment-icon"><CircleDollarSign /></div>
+                        <div className="payment-main"><strong>{formatCurrency(payment.amount)}</strong><span>{payment.notes || "Pagamento"}</span></div>
+                        <div className="payment-meta"><strong>{formatDate(payment.payment_date)}</strong><span>{payment.method}</span></div>
+                        <button className="icon-danger-button" type="button" onClick={() => setPaymentToDelete(payment.id)} aria-label="Remover pagamento"><Trash2 /></button>
+                      </article>
+                    ))}
+                </div>
+              ) : (
+                <div className="empty"><WalletCards />Nenhum pagamento registrado.</div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {activeTab === "dados" ? (
+          <div className="data-tab-layout">
+            <form className="detail-section-card reservation-edit-form" onSubmit={saveReservationData}>
+              <div className="detail-section-heading">
+                <Edit3 />
+                <div><h2>Editar reserva</h2><p>Atualize os dados sem perder o histórico financeiro.</p></div>
+              </div>
+              <div className="form-grid modern-form-grid">
+                <label className="field field-full"><span className="label">Igreja / grupo</span><input className="input" value={draft.church_name} onChange={(event) => updateDraft("church_name", event.target.value)} required /></label>
+                <label className="field"><span className="label">Responsável</span><input className="input" value={draft.contact_name} onChange={(event) => updateDraft("contact_name", event.target.value)} required /></label>
+                <label className="field"><span className="label">WhatsApp</span><input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} required /></label>
+                <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label>
+                <label className="field"><span className="label">Cardápio / pacote</span><input className="input" value={draft.package_name} onChange={(event) => updateDraft("package_name", event.target.value)} /></label>
+                <label className="field"><span className="label">Data inicial</span><input className="input" type="date" value={draft.start_date} onChange={(event) => updateDraft("start_date", event.target.value)} required /></label>
+                <label className="field"><span className="label">Data final</span><input className="input" type="date" min={draft.start_date} value={draft.end_date} onChange={(event) => updateDraft("end_date", event.target.value)} required /></label>
+                <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" max="500" value={draft.guests_estimated} onChange={(event) => updateDraft("guests_estimated", event.target.value)} required /></label>
+                <label className="field"><span className="label">Pessoas confirmadas</span><input className="input" type="number" min="1" max="500" value={draft.guests_confirmed} onChange={(event) => updateDraft("guests_confirmed", event.target.value)} placeholder="Ainda não informado" /></label>
+                <label className="field field-full"><span className="label">Valor combinado</span><input className="input" type="number" min="0" step="0.01" value={draft.total_amount} onChange={(event) => updateDraft("total_amount", event.target.value)} placeholder="Pode ficar em branco até a negociação" /></label>
+                <label className="field field-full"><span className="label">Observações</span><textarea className="textarea" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} /></label>
+              </div>
+              <div className="edit-form-actions">
+                <button className="button button-secondary" type="button" onClick={() => setDrafts((current) => {
+                  const next = { ...current };
+                  delete next[currentReservation.id];
+                  return next;
+                })}>Descartar alterações</button>
+                <button className="button button-primary" disabled={saving}><Save /> Salvar alterações</button>
+              </div>
+            </form>
+
+            <aside className="detail-section-card danger-zone">
+              <h2>Gerenciar reserva</h2>
+              <p>Cancelar mantém o histórico e libera a data. Excluir remove definitivamente a reserva e seus pagamentos.</p>
+              {currentReservation.status !== "CANCELADA" ? (
+                <button className="button button-warning" type="button" onClick={() => setPendingAction("cancel")}>
+                  <XCircle /> Cancelar reserva
+                </button>
+              ) : null}
+              <button className="button button-danger" type="button" onClick={() => setPendingAction("delete")}>
+                <Trash2 /> Excluir definitivamente
+              </button>
+            </aside>
+          </div>
+        ) : null}
+
+        {activeTab === "historico" ? (
+          <section className="detail-section-card history-tab-card">
+            <div className="detail-section-heading">
+              <History />
+              <div><h2>Histórico da reserva</h2><p>Resumo cronológico do cadastro e dos recebimentos.</p></div>
             </div>
-            <div className="panel-body">
-              <select
-                className="select"
-                value={currentReservation.status}
-                onChange={(event) => changeStatus(event.target.value as ReservationStatus)}
-                disabled={saving}
-              >
-                <option value="PRE_RESERVA">Pré-reserva</option>
-                <option value="CONFIRMADA">Confirmada</option>
-                <option value="REALIZADA">Realizada</option>
-                <option value="CANCELADA">Cancelada</option>
-              </select>
+            <div className="history-timeline">
+              {historyItems.map((item) => (
+                <article className="history-item" key={item.id}>
+                  <div className={`history-dot ${item.tone}`} />
+                  <div><strong>{item.title}</strong><p>{item.description}</p></div>
+                  <time>{formatDate(item.date)}</time>
+                </article>
+              ))}
             </div>
           </section>
-        </div>
-      </div>
+        ) : null}
+      </section>
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title={pendingAction === "delete" ? "Excluir esta reserva?" : "Cancelar esta reserva?"}
+        description={
+          pendingAction === "delete"
+            ? "A reserva e todos os pagamentos vinculados serão removidos definitivamente. Esta ação não pode ser desfeita."
+            : "A reserva continuará no histórico como cancelada e o período ficará disponível novamente."
+        }
+        confirmLabel={pendingAction === "delete" ? "Excluir reserva" : "Cancelar reserva"}
+        tone={pendingAction === "delete" ? "danger" : "warning"}
+        busy={saving}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={confirmPendingAction}
+      />
+
+      <ConfirmDialog
+        open={paymentToDelete !== null}
+        title="Remover este pagamento?"
+        description="O valor será retirado do total recebido e o saldo da reserva será recalculado."
+        confirmLabel="Remover pagamento"
+        busy={saving}
+        onCancel={() => setPaymentToDelete(null)}
+        onConfirm={confirmDeletePayment}
+      />
     </main>
   );
 }

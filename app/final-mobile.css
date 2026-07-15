@@ -1,0 +1,400 @@
+/* Lote final: identidade oficial, calendário mobile-first e modais previsíveis. */
+
+.sitio-brand-logo {
+  content: url('/sitio-emanuel-logo.png');
+  width: 174px;
+  height: auto;
+  max-height: 116px;
+  object-fit: contain;
+}
+
+.prototype-brand {
+  min-height: 154px;
+  justify-content: center;
+  gap: 2px;
+}
+
+.prototype-brand .brand-subtitle {
+  margin-top: -2px;
+  font-size: 11px;
+  letter-spacing: 0.055em;
+}
+
+body:has(.prototype-modal-backdrop),
+body:has(.confirm-backdrop),
+body:has(.customer-modal-backdrop) {
+  overflow: hidden;
+}
+
+.prototype-modal-backdrop {
+  z-index: 1000;
+  align-items: center;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.prototype-modal {
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.prototype-modal-header {
+  position: relative;
+  top: auto;
+  flex: 0 0 auto;
+}
+
+.prototype-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.prototype-modal .calendar-reservation-form {
+  min-width: 0;
+}
+
+.protototype-modal .compact-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prototype-modal .field-full {
+  grid-column: 1 / -1;
+}
+
+.prototype-modal .field-full {
+  grid-column: 1 / -1;
+}
+
+.modern-detail-title h1 {
+  font-size: clamp(28px, 2.35vw, 36px);
+}
+
+.detail-metric strong {
+  font-size: clamp(22px, 1.9vw, 28px);
+}
+
+.detail-section-heading h2,
+.quick-status-card h2,
+.quick-actions-card h2,
+.danger-zone h2 {
+  font-size: 18px;
+}
+
+.summary-info-grid span,
+.finance-big-summary span,
+.detail-metric span {
+  font-size: 10px;
+}
+
+.summary-info-grid strong,
+.quick-detail-action strong,
+.history-item strong {
+  font-size: 13px;
+}
+
+.detail-section-heading p,
+.quick-status-card p,
+.danger-zone p,
+.quick-detail-action small {
+  font-size: 11px;
+}
+
+@media (max-width: 980px) {
+  .sitio-brand-logo {
+    width: 176px;
+  }
+
+  .prototype-brand {
+    min-height: 152px;
+  }
+
+  .modern-detail-header {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .prototype-content {
+    padding: 10px;
+  }
+
+  .prototype-calendar {
+    min-height: calc(100dvh - 76px);
+    padding: 14px 10px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+  }
+
+  .prototype-calendar-toolbar {
+    position: sticky;
+    left: 0;
+    z-index: 12;
+    width: calc(100vw - 40px);
+    min-width: calc(100vw - 40px);
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    margin-bottom: 12px;
+    background: #fffdf9;
+  }
+
+  .prototype-month-title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin-bottom: 2px;
+    font-size: 18px;
+  }
+
+  .prototype-calendar-controls,
+  .prototype-new-button {
+    grid-row: 2;
+  }
+
+  .prototype-new-button {
+    min-height: 42px;
+    padding: 0 14px;
+  }
+
+  .prototype-weekdays,
+  .prototype-calendar-body,
+  .prototype-week-row {
+    min-width: 700px !important;
+  }
+
+  .prototype-calendar-body {
+    flex: 0 0 auto;
+    overflow: visible !important;
+    grid-template-rows: repeat(var(--calendar-weeks, 5), 104px);
+  }
+
+  .prototype-weekdays {
+    position: relative;
+    top: auto;
+    z-index: 8;
+    background: #fffdf9;
+  }
+
+  .prototype-week-row,
+  .prototype-day-cell {
+    min-height: 104px;
+  }
+
+  .prototype-day-cell {
+    padding: 11px 10px 50px;
+  }
+
+  .prototype-booking-bar {
+    height: 46px;
+    margin-inline: 5px;
+  }
+
+  .prototype-calendar-legend {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    width: calc(100vw - 40px);
+    min-width: calc(100vw - 40px);
+    justify-content: center;
+    gap: 12px 18px;
+    padding-inline: 4px;
+    background: #fffdf9;
+  }
+
+  .prototype-modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .prototype-modal {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .prototype-modal-header {
+    padding: 14px 16px;
+  }
+
+  .prototype-modal-body {
+    padding: 16px;
+  }
+
+  .prototype-modal .compact-form-grid,
+  .prototype-reservation-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prototype-modal .mode-tabs {
+    max-width: none;
+  }
+
+  .modern-detail-page {
+    gap: 12px;
+  }
+
+  .modern-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .modern-detail-title h1 {
+    margin-top: 8px;
+    font-size: 30px;
+  }
+
+  .modern-detail-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .modern-detail-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .detail-tabs {
+    position: sticky;
+    top: 54px;
+    z-index: 20;
+    margin-inline: -2px;
+  }
+
+  .detail-tabs button {
+    min-width: 108px;
+    min-height: 40px;
+    padding-inline: 12px;
+    font-size: 11.5px;
+  }
+
+  .summary-layout,
+  .data-tab-layout,
+  .finance-tab-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-metrics,
+  .summary-info-grid,
+  .payment-form-grid,
+  .finance-big-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-metric {
+    min-height: 88px;
+    padding: 15px 16px;
+  }
+
+  .detail-metric strong {
+    font-size: 23px;
+  }
+
+  .detail-section-card {
+    padding: 17px;
+  }
+
+  .finance-big-summary > div {
+    min-height: 72px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e1d8;
+  }
+
+  .finance-big-summary > div:last-child {
+    border-bottom: 0;
+  }
+
+  .compact-finance-form {
+    grid-template-columns: 1fr;
+  }
+
+  .modern-payment-row {
+    grid-template-columns: 36px minmax(0, 1fr) 34px;
+  }
+
+  .payment-meta {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .modern-payment-row .icon-danger-button {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .edit-form-actions,
+  .customer-modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .edit-form-actions .button,
+  .customer-modal-actions .button {
+    width: 100%;
+  }
+
+  .confirm-backdrop,
+  .customer-modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .confirm-dialog,
+  .customer-modal {
+    width: 100%;
+    max-height: 92dvh;
+    overflow-y: auto;
+    border-radius: 18px 18px 0 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .prototype-content {
+    padding-inline: 8px;
+  }
+
+  .prototype-calendar-toolbar {
+    width: calc(100vw - 36px);
+    min-width: calc(100vw - 36px);
+  }
+
+  .calendar-today-button {
+    padding-inline: 12px;
+  }
+
+  .calendar-arrow {
+    width: 36px;
+  }
+
+  .prototype-new-button {
+    max-width: 142px;
+    line-height: 1.15;
+  }
+
+  .prototype-weekdays,
+  .prototype-calendar-body,
+  .prototype-week-row {
+    min-width: 660px !important;
+  }
+
+  .prototype-calendar-legend {
+    width: calc(100vw - 36px);
+    min-width: calc(100vw - 36px);
+  }
+
+  .modern-detail-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-tabs button {
+    min-width: 102px;
+  }
+}

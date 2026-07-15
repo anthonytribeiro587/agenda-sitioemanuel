@@ -1,36 +1,280 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { MessageCircle, Plus, Search } from "lucide-react";
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+  CalendarDays,
+  Edit3,
+  Mail,
+  MessageCircle,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAgenda } from "@/components/AgendaProvider";
 import { normalizePhone } from "@/lib/format";
+import type { Customer, CustomerInput } from "@/lib/types";
+
+const emptyForm: CustomerInput = {
+  name: "",
+  organization: "",
+  phone: "",
+  email: "",
+  notes: "",
+};
 
 export default function ClientesPage() {
-  const { customers, reservations, createCustomer } = useAgenda();
+  const {
+    customers,
+    reservations,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer,
+  } = useAgenda();
   const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name:"", organization:"", phone:"", email:"", notes:"" });
+  const deferredQuery = useDeferredValue(query);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<CustomerInput>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+
+  const reservationCountByCustomer = useMemo(() => {
+    const counts = new Map<string, number>();
+    reservations.forEach((reservation) => {
+      if (!reservation.customer_id) return;
+      counts.set(reservation.customer_id, (counts.get(reservation.customer_id) ?? 0) + 1);
+    });
+    return counts;
+  }, [reservations]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return customers.filter((customer)=>!q || [customer.name,customer.organization,customer.phone,customer.email].join(" ").toLowerCase().includes(q));
-  }, [customers, query]);
+    const normalized = deferredQuery.trim().toLowerCase();
+    return customers.filter((customer) => {
+      if (!normalized) return true;
+      return [customer.name, customer.organization, customer.phone, customer.email]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }, [customers, deferredQuery]);
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFeedback("");
+    setFormOpen(true);
+  }
+
+  function openEdit(customer: Customer) {
+    setEditingId(customer.id);
+    setForm({
+      name: customer.name,
+      organization: customer.organization,
+      phone: customer.phone,
+      email: customer.email,
+      notes: customer.notes,
+    });
+    setFeedback("");
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    if (saving) return;
+    setFormOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
+  function updateField<K extends keyof CustomerInput>(key: K, value: CustomerInput[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
 
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); setSaving(true);
+    event.preventDefault();
+    setSaving(true);
+    setFeedback("");
+
     try {
-      await createCustomer(form);
-      setForm({ name:"", organization:"", phone:"", email:"", notes:"" });
-      setShowForm(false);
-    } finally { setSaving(false); }
+      if (editingId) {
+        await updateCustomer(editingId, form);
+        setFeedback("Cliente atualizado.");
+      } else {
+        await createCustomer(form);
+        setFeedback("Cliente cadastrado.");
+      }
+      setFormOpen(false);
+      setEditingId(null);
+      setForm(emptyForm);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível salvar o cliente.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setSaving(true);
+    setFeedback("");
+    try {
+      await deleteCustomer(deleteTarget.id);
+      setFeedback("Cliente removido. As reservas antigas foram preservadas.");
+      setDeleteTarget(null);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Não foi possível remover o cliente.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <main className="page">
-      <div className="page-head"><div><h2>Clientes e igrejas</h2><p>Dados de contato organizados para reutilizar em novas reservas.</p></div><div className="page-actions"><button className="button button-primary" onClick={()=>setShowForm((v)=>!v)}><Plus /> Novo cliente</button></div></div>
-      {showForm ? <section className="panel" style={{marginBottom:18}}><div className="panel-header"><div><h3 className="panel-title">Cadastrar cliente</h3><p className="panel-subtitle">Igreja, responsável e informações úteis para o próximo atendimento.</p></div></div><div className="panel-body"><form className="form-grid" onSubmit={submit}><label className="field"><span className="label">Responsável</span><input className="input" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} required /></label><label className="field"><span className="label">Igreja / organização</span><input className="input" value={form.organization} onChange={(e)=>setForm({...form,organization:e.target.value})} required /></label><label className="field"><span className="label">WhatsApp</span><input className="input" value={form.phone} onChange={(e)=>setForm({...form,phone:e.target.value})} required /></label><label className="field"><span className="label">E-mail</span><input className="input" type="email" value={form.email} onChange={(e)=>setForm({...form,email:e.target.value})} /></label><label className="field field-full"><span className="label">Observações</span><textarea className="textarea" value={form.notes} onChange={(e)=>setForm({...form,notes:e.target.value})} /></label><div className="field-full" style={{display:"flex",justifyContent:"flex-end",gap:8}}><button type="button" className="button button-secondary" onClick={()=>setShowForm(false)}>Cancelar</button><button className="button button-primary" disabled={saving}>{saving?"Salvando...":"Salvar cliente"}</button></div></form></div></section> : null}
-      <section className="panel"><div className="panel-header"><div><h3 className="panel-title">Contatos cadastrados</h3><p className="panel-subtitle">{customers.length} clientes no cadastro.</p></div></div><div className="panel-body"><label className="search" style={{display:"block",marginBottom:18}}><Search /><input className="input" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Buscar por nome, igreja ou telefone..." /></label><div className="grid-3">{filtered.map((customer)=>{const count=reservations.filter((item)=>item.customer_id===customer.id).length;return <article className="form-section" key={customer.id} style={{margin:0}}><div style={{display:"flex",justifyContent:"space-between",gap:12}}><div><h3 style={{margin:0}}>{customer.organization}</h3><p style={{margin:'6px 0 0',color:'var(--muted)',fontSize:13}}>{customer.name}</p></div><a className="button button-secondary button-sm" href={`https://wa.me/${normalizePhone(customer.phone)}`} target="_blank" rel="noreferrer"><MessageCircle /></a></div><div className="reservation-meta" style={{marginTop:14,display:'grid',gap:6}}><span>{customer.phone}</span><span>{customer.email || "Sem e-mail"}</span><span>{count} reserva{count===1?"":"s"}</span></div>{customer.notes ? <p style={{margin:'14px 0 0',color:'var(--muted)',fontSize:12,lineHeight:1.55}}>{customer.notes}</p> : null}</article>})}</div></div></section>
+    <main className="page customers-page">
+      <div className="page-head customers-head">
+        <div>
+          <h2>Clientes e igrejas</h2>
+          <p>Contatos organizados para reutilizar nas próximas reservas.</p>
+        </div>
+        <div className="page-actions">
+          <button className="button button-primary" type="button" onClick={openCreate}>
+            <Plus /> Novo cliente
+          </button>
+        </div>
+      </div>
+
+      {feedback ? <div className="detail-feedback" role="status">{feedback}</div> : null}
+
+      <section className="customers-toolbar">
+        <label className="search customer-search">
+          <Search />
+          <input
+            className="input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por nome, igreja, telefone ou e-mail..."
+          />
+        </label>
+        <div className="customer-total">
+          <UserRound />
+          <span><strong>{customers.length}</strong> contato{customers.length === 1 ? "" : "s"}</span>
+        </div>
+      </section>
+
+      {filtered.length ? (
+        <section className="customer-card-grid">
+          {filtered.map((customer) => {
+            const reservationCount = reservationCountByCustomer.get(customer.id) ?? 0;
+            return (
+              <article className="customer-card" key={customer.id}>
+                <div className="customer-card-top">
+                  <div className="customer-avatar">{customer.organization.slice(0, 2).toUpperCase()}</div>
+                  <div className="customer-title">
+                    <h3>{customer.organization}</h3>
+                    <p>{customer.name}</p>
+                  </div>
+                  <div className="customer-card-actions">
+                    <button className="icon-action-button" type="button" onClick={() => openEdit(customer)} aria-label="Editar cliente">
+                      <Edit3 />
+                    </button>
+                    <button className="icon-action-button danger" type="button" onClick={() => setDeleteTarget(customer)} aria-label="Excluir cliente">
+                      <Trash2 />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="customer-contact-list">
+                  <div><Phone /><span>{customer.phone}</span></div>
+                  <div><Mail /><span>{customer.email || "Sem e-mail informado"}</span></div>
+                  <div><CalendarDays /><span>{reservationCount} reserva{reservationCount === 1 ? "" : "s"}</span></div>
+                </div>
+
+                {customer.notes ? <p className="customer-notes">{customer.notes}</p> : null}
+
+                <div className="customer-card-footer">
+                  <a
+                    className="button button-secondary button-sm"
+                    href={`https://wa.me/${normalizePhone(customer.phone)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageCircle /> WhatsApp
+                  </a>
+                  <button className="button button-ghost button-sm" type="button" onClick={() => openEdit(customer)}>
+                    <Edit3 /> Editar dados
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <div className="customers-empty">
+          <UserRound />
+          <h3>Nenhum cliente encontrado</h3>
+          <p>Cadastre o primeiro contato ou altere os termos da busca.</p>
+          <button className="button button-primary" type="button" onClick={openCreate}><Plus /> Novo cliente</button>
+        </div>
+      )}
+
+      {formOpen ? (
+        <div className="customer-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) closeForm();
+        }}>
+          <section className="customer-modal" role="dialog" aria-modal="true" aria-label={editingId ? "Editar cliente" : "Novo cliente"}>
+            <header className="customer-modal-header">
+              <div>
+                <span>{editingId ? "Atualizar contato" : "Novo contato"}</span>
+                <h2>{editingId ? "Editar cliente" : "Cadastrar cliente"}</h2>
+                <p>Dados da igreja, grupo ou responsável pelo evento.</p>
+              </div>
+              <button className="confirm-close" type="button" onClick={closeForm} aria-label="Fechar"><X /></button>
+            </header>
+
+            <form className="customer-modal-form" onSubmit={submit}>
+              <div className="form-grid modern-form-grid">
+                <label className="field">
+                  <span className="label">Responsável</span>
+                  <input className="input" value={form.name} onChange={(event) => updateField("name", event.target.value)} required />
+                </label>
+                <label className="field">
+                  <span className="label">Igreja / organização</span>
+                  <input className="input" value={form.organization} onChange={(event) => updateField("organization", event.target.value)} required />
+                </label>
+                <label className="field">
+                  <span className="label">WhatsApp</span>
+                  <input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateField("phone", event.target.value)} required />
+                </label>
+                <label className="field">
+                  <span className="label">E-mail</span>
+                  <input className="input" type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
+                </label>
+                <label className="field field-full">
+                  <span className="label">Observações</span>
+                  <textarea className="textarea" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Preferências, histórico e informações úteis..." />
+                </label>
+              </div>
+              <div className="customer-modal-actions">
+                <button className="button button-secondary" type="button" onClick={closeForm}>Cancelar</button>
+                <button className="button button-primary" disabled={saving}>{saving ? "Salvando..." : editingId ? "Salvar alterações" : "Cadastrar cliente"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir este cliente?"
+        description="O contato será removido do cadastro, mas as reservas antigas continuarão disponíveis no histórico."
+        confirmLabel="Excluir cliente"
+        busy={saving}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </main>
   );
 }
