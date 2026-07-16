@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -65,13 +64,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside className={`sidebar prototype-sidebar ${open ? "open" : ""}`}>
         <Link className="prototype-brand" href="/dashboard" onClick={() => setOpen(false)}>
-          <Image
-            src="/sitio-emanuel-logo.svg"
-            alt="Sítio Emanuel"
-            width={190}
-            height={112}
-            priority
+          <span
             className="sitio-brand-logo"
+            role="img"
+            aria-label="Sítio Emanuel"
           />
           <span className="brand-caption">Agenda interna</span>
         </Link>
