@@ -66,6 +66,7 @@ export function MonthCalendar({
   selectedEnd,
   onSelect,
   onNewReservation,
+  canCreate = true,
 }: {
   reservations: Reservation[];
   blockedPeriods: BlockedPeriod[];
@@ -73,6 +74,7 @@ export function MonthCalendar({
   selectedEnd?: string;
   onSelect?: (selection: CalendarSelection) => void;
   onNewReservation?: () => void;
+  canCreate?: boolean;
 }) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
 
@@ -117,10 +119,12 @@ export function MonthCalendar({
 
         <h2 className="prototype-month-title">{monthLabel(month)}</h2>
 
-        <button className="prototype-new-button" type="button" onClick={onNewReservation}>
-          <Plus />
-          Nova reserva
-        </button>
+        {canCreate ? (
+          <button className="prototype-new-button" type="button" onClick={onNewReservation}>
+            <Plus />
+            Nova reserva
+          </button>
+        ) : <span aria-hidden="true" />}
       </div>
 
       <div className="prototype-weekdays">
@@ -131,7 +135,7 @@ export function MonthCalendar({
         ))}
       </div>
 
-      <div className="prototype-calendar-body" style={{ "--calendar-weeks": weeks.length } as React.CSSProperties}>
+      <div className={`prototype-calendar-body calendar-weeks-${weeks.length}`}>
         {weeks.map((week) => {
           const weekStart = format(week[0], "yyyy-MM-dd");
           const weekEnd = format(week[6], "yyyy-MM-dd");
@@ -155,8 +159,8 @@ export function MonthCalendar({
                   <button
                     type="button"
                     key={iso}
-                    style={{ gridColumn: index + 1 }}
                     className={[
+                      `calendar-col-${index + 1}`,
                       "prototype-day-cell",
                       !isSameMonth(day, month) ? "outside" : "",
                       isWeekendDay ? "weekend" : "",
@@ -184,7 +188,7 @@ export function MonthCalendar({
                         return;
                       }
 
-                      onSelect(suggestedRange(day));
+                      if (canCreate) onSelect(suggestedRange(day));
                     }}
                     aria-label={format(day, "dd 'de' MMMM", { locale: ptBR })}
                   >
@@ -206,8 +210,7 @@ export function MonthCalendar({
                 return (
                   <button
                     type="button"
-                    className={`prototype-booking-bar ${reservationTone(reservation.status)}`}
-                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}`, gridRow: 1 }}
+                    className={`prototype-booking-bar ${reservationTone(reservation.status)} calendar-start-${startIndex + 1} calendar-end-${endIndex + 2} calendar-row-1`}
                     key={`${reservation.id}-${weekStart}`}
                     onClick={() =>
                       onSelect?.({
@@ -236,8 +239,7 @@ export function MonthCalendar({
                 return (
                   <button
                     type="button"
-                    className="prototype-booking-bar blocked"
-                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}`, gridRow: 1 }}
+                    className={`prototype-booking-bar blocked calendar-start-${startIndex + 1} calendar-end-${endIndex + 2} calendar-row-1`}
                     key={`${block.id}-${weekStart}`}
                     onClick={() =>
                       onSelect?.({

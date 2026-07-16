@@ -33,6 +33,7 @@ export default function ClientesPage() {
     createCustomer,
     updateCustomer,
     deleteCustomer,
+    role,
   } = useAgenda();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -42,6 +43,9 @@ export default function ClientesPage() {
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const canManageCustomers = role === "ADMIN" || role === "GESTOR";
+  const canDeleteCustomers = role === "ADMIN";
 
   const reservationCountByCustomer = useMemo(() => {
     const counts = new Map<string, number>();
@@ -122,9 +126,10 @@ export default function ClientesPage() {
     setSaving(true);
     setFeedback("");
     try {
-      await deleteCustomer(deleteTarget.id);
-      setFeedback("Cliente removido. As reservas antigas foram preservadas.");
+      await deleteCustomer(deleteTarget.id, deleteReason.trim());
+      setFeedback("Cliente removido com registro de auditoria.");
       setDeleteTarget(null);
+      setDeleteReason("");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Não foi possível remover o cliente.");
     } finally {
@@ -139,11 +144,13 @@ export default function ClientesPage() {
           <h2>Clientes e igrejas</h2>
           <p>Contatos organizados para reutilizar nas próximas reservas.</p>
         </div>
-        <div className="page-actions">
-          <button className="button button-primary" type="button" onClick={openCreate}>
-            <Plus /> Novo cliente
-          </button>
-        </div>
+        {canManageCustomers ? (
+          <div className="page-actions">
+            <button className="button button-primary" type="button" onClick={openCreate}>
+              <Plus /> Novo cliente
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {feedback ? <div className="detail-feedback" role="status">{feedback}</div> : null}
@@ -176,14 +183,18 @@ export default function ClientesPage() {
                     <h3>{customer.organization}</h3>
                     <p>{customer.name}</p>
                   </div>
-                  <div className="customer-card-actions">
-                    <button className="icon-action-button" type="button" onClick={() => openEdit(customer)} aria-label="Editar cliente">
-                      <Edit3 />
-                    </button>
-                    <button className="icon-action-button danger" type="button" onClick={() => setDeleteTarget(customer)} aria-label="Excluir cliente">
-                      <Trash2 />
-                    </button>
-                  </div>
+                  {canManageCustomers ? (
+                    <div className="customer-card-actions">
+                      <button className="icon-action-button" type="button" onClick={() => openEdit(customer)} aria-label="Editar cliente">
+                        <Edit3 />
+                      </button>
+                      {canDeleteCustomers ? (
+                        <button className="icon-action-button danger" type="button" onClick={() => { setDeleteReason(""); setDeleteTarget(customer); }} aria-label="Excluir cliente">
+                          <Trash2 />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="customer-contact-list">
@@ -203,9 +214,11 @@ export default function ClientesPage() {
                   >
                     <MessageCircle /> WhatsApp
                   </a>
-                  <button className="button button-ghost button-sm" type="button" onClick={() => openEdit(customer)}>
-                    <Edit3 /> Editar dados
-                  </button>
+                  {canManageCustomers ? (
+                    <button className="button button-ghost button-sm" type="button" onClick={() => openEdit(customer)}>
+                      <Edit3 /> Editar dados
+                    </button>
+                  ) : null}
                 </div>
               </article>
             );
@@ -216,11 +229,11 @@ export default function ClientesPage() {
           <UserRound />
           <h3>Nenhum cliente encontrado</h3>
           <p>Cadastre o primeiro contato ou altere os termos da busca.</p>
-          <button className="button button-primary" type="button" onClick={openCreate}><Plus /> Novo cliente</button>
+          {canManageCustomers ? <button className="button button-primary" type="button" onClick={openCreate}><Plus /> Novo cliente</button> : null}
         </div>
       )}
 
-      {formOpen ? (
+      {formOpen && canManageCustomers ? (
         <div className="customer-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.currentTarget === event.target) closeForm();
         }}>
@@ -269,12 +282,25 @@ export default function ClientesPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Excluir este cliente?"
-        description="O contato será removido do cadastro, mas as reservas antigas continuarão disponíveis no histórico."
+        description="A exclusão só é permitida para contatos sem reservas vinculadas e ficará registrada na auditoria."
         confirmLabel="Excluir cliente"
         busy={saving}
-        onCancel={() => setDeleteTarget(null)}
+        confirmDisabled={deleteReason.trim().length < 5}
+        onCancel={() => { setDeleteTarget(null); setDeleteReason(""); }}
         onConfirm={confirmDelete}
-      />
+      >
+        <label className="field">
+          <span className="label">Motivo da exclusão</span>
+          <textarea
+            className="textarea"
+            value={deleteReason}
+            maxLength={500}
+            onChange={(event) => setDeleteReason(event.target.value)}
+            placeholder="Ex.: cadastro criado em duplicidade"
+            autoFocus
+          />
+        </label>
+      </ConfirmDialog>
     </main>
   );
 }

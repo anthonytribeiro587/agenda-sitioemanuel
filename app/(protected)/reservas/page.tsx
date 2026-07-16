@@ -16,7 +16,8 @@ const statuses: Array<{ value: "TODAS" | ReservationStatus; label: string }> = [
 ];
 
 export default function ReservasPage() {
-  const { reservations, loading } = useAgenda();
+  const { reservations, loading, role } = useAgenda();
+  const canCreateReservations = role === "ADMIN" || role === "GESTOR";
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [status, setStatus] = useState<"TODAS" | ReservationStatus>("TODAS");
@@ -56,9 +57,11 @@ export default function ReservasPage() {
           <h2>Reservas</h2>
           <p>Consulte, edite e acompanhe todos os eventos em um único lugar.</p>
         </div>
-        <div className="page-actions">
-          <Link href="/agenda" className="button button-primary"><CalendarPlus2 /> Nova reserva</Link>
-        </div>
+        {canCreateReservations ? (
+          <div className="page-actions">
+            <Link href="/agenda" className="button button-primary"><CalendarPlus2 /> Nova reserva</Link>
+          </div>
+        ) : null}
       </div>
 
       <section className="reservation-filter-panel">
@@ -99,8 +102,8 @@ export default function ReservasPage() {
         <section className="reservations-empty">
           <CalendarPlus2 />
           <h3>Nenhuma reserva encontrada</h3>
-          <p>Altere os filtros ou cadastre uma nova reserva pela agenda.</p>
-          <Link href="/agenda" className="button button-primary">Abrir agenda</Link>
+          <p>{canCreateReservations ? "Altere os filtros ou cadastre uma nova reserva pela agenda." : "Altere os filtros para consultar outras reservas."}</p>
+          {canCreateReservations ? <Link href="/agenda" className="button button-primary">Abrir agenda</Link> : null}
         </section>
       )}
     </main>

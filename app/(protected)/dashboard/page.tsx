@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowRight,
   CalendarCheck2,
   CalendarDays,
@@ -22,7 +23,8 @@ import {
 } from "@/lib/format";
 
 export default function DashboardPage() {
-  const { reservations, blockedPeriods, loading } = useAgenda();
+  const { reservations, blockedPeriods, loading, role } = useAgenda();
+  const canCreateReservations = role === "ADMIN" || role === "GESTOR";
   const today = new Date().toISOString().slice(0, 10);
 
   const data = useMemo(() => {
@@ -43,12 +45,15 @@ export default function DashboardPage() {
       (total, item) => total + reservationBalance(item),
       0
     );
+    const cancelledWithFinancialHistory = reservations
+      .filter((item) => item.status === "CANCELADA" && paymentTotal(item.payments) > 0)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     const confirmedGuests = upcoming.reduce(
       (total, item) => total + (item.guests_confirmed ?? item.guests_estimated),
       0
     );
 
-    return { active, upcoming, pending, received, openBalance, confirmedGuests };
+    return { active, upcoming, pending, received, openBalance, confirmedGuests, cancelledWithFinancialHistory };
   }, [reservations, today]);
 
   if (loading) {
@@ -63,9 +68,11 @@ export default function DashboardPage() {
           <h2>Visão geral</h2>
           <p>O que precisa de atenção agora, sem excesso de informação.</p>
         </div>
-        <div className="page-actions">
-          <Link href="/agenda" className="button button-primary"><Plus /> Nova reserva</Link>
-        </div>
+        {canCreateReservations ? (
+          <div className="page-actions">
+            <Link href="/agenda" className="button button-primary"><Plus /> Nova reserva</Link>
+          </div>
+        ) : null}
       </div>
 
       <section className="dashboard-metrics-grid" aria-label="Indicadores principais">
@@ -118,11 +125,13 @@ export default function DashboardPage() {
                 <div><strong>Agenda mensal</strong><span>Visualizar datas e disponibilidade.</span></div>
                 <ArrowRight className="row-arrow" />
               </Link>
-              <Link href="/reservas/nova" className="dashboard-quick-link">
-                <div className="dashboard-quick-icon"><Plus /></div>
-                <div><strong>Nova reserva</strong><span>Cadastrar evento rapidamente.</span></div>
-                <ArrowRight className="row-arrow" />
-              </Link>
+              {canCreateReservations ? (
+                <Link href="/reservas/nova" className="dashboard-quick-link">
+                  <div className="dashboard-quick-icon"><Plus /></div>
+                  <div><strong>Nova reserva</strong><span>Cadastrar evento rapidamente.</span></div>
+                  <ArrowRight className="row-arrow" />
+                </Link>
+              ) : null}
               <Link href="/clientes" className="dashboard-quick-link">
                 <div className="dashboard-quick-icon"><UsersRound /></div>
                 <div><strong>Clientes</strong><span>Consultar contatos e histórico.</span></div>
@@ -150,6 +159,21 @@ export default function DashboardPage() {
               <Link href="/financeiro" className="button button-secondary button-wide">Abrir financeiro <ArrowRight /></Link>
             </div>
           </section>
+
+          {data.cancelledWithFinancialHistory.length ? (
+            <section className="panel compact-panel dashboard-financial-exception">
+              <div className="panel-header"><div><h3 className="panel-title">Canceladas com recebimentos</h3><p className="panel-subtitle">Valores que exigem conferência ou estorno documentado.</p></div></div>
+              <div className="panel-body dashboard-pending-list">
+                {data.cancelledWithFinancialHistory.slice(0, 4).map((reservation) => (
+                  <Link href={`/reservas/${reservation.id}`} key={reservation.id}>
+                    <div><strong>{reservation.church_name}</strong><span>{formatRange(reservation.start_date, reservation.end_date)}</span></div>
+                    <strong>{formatCurrency(paymentTotal(reservation.payments))}</strong>
+                  </Link>
+                ))}
+                <div className="security-notice-inline"><AlertTriangle /> Conferir devolução, crédito ou retenção antes do fechamento.</div>
+              </div>
+            </section>
+          ) : null}
 
           <section className="panel compact-panel dashboard-block-panel">
             <div className="panel-header"><div><h3 className="panel-title">Datas bloqueadas</h3><p className="panel-subtitle">Manutenções e indisponibilidades.</p></div></div>

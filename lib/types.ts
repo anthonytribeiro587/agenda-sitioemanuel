@@ -16,6 +16,7 @@ export type Customer = {
   notes: string;
   created_at: string;
   updated_at?: string;
+  request_key?: string;
 };
 
 export type Payment = {
@@ -54,6 +55,7 @@ export type Reservation = {
   cancelled_by?: string | null;
   customer?: Customer | null;
   payments?: Payment[];
+  request_key?: string;
 };
 
 export type BlockedPeriod = {
@@ -62,6 +64,7 @@ export type BlockedPeriod = {
   end_date: string;
   reason: string;
   created_at: string;
+  request_key?: string;
 };
 
 export type ReservationInput = Omit<
@@ -74,15 +77,29 @@ export type ReservationInput = Omit<
   | "cancelled_at"
   | "cancel_reason"
   | "cancelled_by"
+  | "request_key"
 >;
 
-export type CustomerInput = Omit<Customer, "id" | "created_at" | "updated_at">;
+export type CustomerInput = Omit<Customer, "id" | "created_at" | "updated_at" | "request_key">;
 export type PaymentInput = Omit<
   Payment,
   "id" | "created_at" | "request_key" | "voided_at" | "void_reason" | "voided_by"
 >;
-export type BlockedPeriodInput = Omit<BlockedPeriod, "id" | "created_at">;
+export type BlockedPeriodInput = Omit<BlockedPeriod, "id" | "created_at" | "request_key">;
 
 export type MutationOptions = {
   reason?: string;
+};
+
+export type PaymentDraftInput = Omit<PaymentInput, "reservation_id">;
+
+export type ReservationFinancialUpdate = {
+  total_amount?: number;
+  total_reason?: string;
+  payment?: PaymentDraftInput | null;
+};
+
+export type ReservationCreationResult = {
+  reservation: Reservation;
+  payment: Payment | null;
 };

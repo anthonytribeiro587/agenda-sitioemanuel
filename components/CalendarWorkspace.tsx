@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useAgenda } from "@/components/AgendaProvider";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MonthCalendar } from "@/components/MonthCalendar";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -59,9 +60,10 @@ export function CalendarWorkspace() {
     reservations,
     customers,
     blockedPeriods,
-    createReservation,
+    role,
+    createReservationWithPayment,
     updateReservation,
-    addPayment,
+    updateReservationFinancial,
     addBlockedPeriod,
     removeBlockedPeriod,
   } = useAgenda();
@@ -75,12 +77,17 @@ export function CalendarWorkspace() {
   const [blockReason, setBlockReason] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [confirmedTotal, setConfirmedTotal] = useState("");
+  const [financialReason, setFinancialReason] = useState("");
+  const [blockDeleteReason, setBlockDeleteReason] = useState("");
+  const [blockDeleteOpen, setBlockDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
   const selectedReservation = reservations.find((item) => item.id === selectedReservationId) ?? null;
   const selectedBlock = blockedPeriods.find((item) => item.id === selectedBlockId) ?? null;
+  const canManageReservations = role === "ADMIN" || role === "GESTOR";
+  const canManageFinance = role === "ADMIN" || role === "FINANCEIRO";
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -113,6 +120,7 @@ export function CalendarWorkspace() {
   }
 
   function openNewReservation() {
+    if (!canManageReservations) return;
     const next = initialWeekend();
     setSelectedStart(next.start);
     setSelectedEnd(next.end);
@@ -140,6 +148,7 @@ export function CalendarWorkspace() {
     const reservation = reservations.find((item) => item.id === selection.reservationId);
     setConfirmedTotal(reservation?.total_amount ? String(reservation.total_amount) : "");
     setPaymentAmount("");
+    setFinancialReason("");
     if (!reservation && !selection.blockId) setForm(blankForm);
     setModalOpen(true);
   }
@@ -155,31 +164,35 @@ export function CalendarWorkspace() {
     setMessage("");
 
     try {
-      const created = await createReservation({
-        customer_id: form.customer_id || null,
-        church_name: form.church_name.trim(),
-        contact_name: form.contact_name.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        start_date: selectedStart,
-        end_date: selectedEnd,
-        guests_estimated: Number(form.guests_estimated || 1),
-        guests_confirmed: null,
-        package_name: form.package_name.trim() || "A definir",
-        total_amount: Number(form.total_amount || 0),
-        status: form.status,
-        notes: form.notes.trim(),
-      });
-
-      if (Number(form.deposit_amount) > 0) {
-        await addPayment({
-          reservation_id: created.id,
-          amount: Number(form.deposit_amount),
-          payment_date: form.payment_date,
-          method: form.payment_method,
-          notes: "Sinal da reserva",
-        });
-      }
+      if (!canManageReservations) throw new Error("Seu perfil não pode criar reservas.");
+      const totalAmount = canManageFinance ? Number(form.total_amount || 0) : 0;
+      const depositAmount = canManageFinance ? Number(form.deposit_amount || 0) : 0;
+      const result = await createReservationWithPayment(
+        {
+          customer_id: form.customer_id || null,
+          church_name: form.church_name.trim(),
+          contact_name: form.contact_name.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim(),
+          start_date: selectedStart,
+          end_date: selectedEnd,
+          guests_estimated: Number(form.guests_estimated || 1),
+          guests_confirmed: null,
+          package_name: form.package_name.trim() || "A definir",
+          total_amount: totalAmount,
+          status: form.status,
+          notes: form.notes.trim(),
+        },
+        depositAmount > 0
+          ? {
+              amount: depositAmount,
+              payment_date: form.payment_date,
+              method: form.payment_method,
+              notes: "Sinal da reserva",
+            }
+          : null
+      );
+      const created = result.reservation;
 
       setSelectedReservationId(created.id);
       setSelectedBlockId(null);
@@ -202,6 +215,10 @@ export function CalendarWorkspace() {
     event.preventDefault();
     if (selectedEnd < selectedStart) {
       setMessage("A data final não pode ser anterior à data inicial.");
+      return;
+    }
+    if (!canManageReservations) {
+      setMessage("Seu perfil não pode bloquear períodos.");
       return;
     }
     setSaving(true);
@@ -243,19 +260,26 @@ export function CalendarWorkspace() {
     setSaving(true);
     setMessage("");
     try {
-      if (confirmedTotal !== "") {
-        await updateReservation(selectedReservation.id, { total_amount: Number(confirmedTotal) });
-      }
-      if (Number(paymentAmount) > 0) {
-        await addPayment({
-          reservation_id: selectedReservation.id,
-          amount: Number(paymentAmount),
-          payment_date: format(new Date(), "yyyy-MM-dd"),
-          method: "PIX",
-          notes: selectedReservation.payments?.length ? "Pagamento adicional" : "Sinal da reserva",
-        });
-        setPaymentAmount("");
-      }
+      if (!canManageFinance) throw new Error("Seu perfil não pode alterar valores financeiros.");
+      const nextTotal = confirmedTotal === "" ? selectedReservation.total_amount : Number(confirmedTotal);
+      const totalChanged = nextTotal !== selectedReservation.total_amount;
+      await updateReservationFinancial(selectedReservation.id, {
+        ...(totalChanged
+          ? { total_amount: nextTotal, total_reason: financialReason.trim() }
+          : {}),
+        ...(Number(paymentAmount) > 0
+          ? {
+              payment: {
+                amount: Number(paymentAmount),
+                payment_date: format(new Date(), "yyyy-MM-dd"),
+                method: "PIX",
+                notes: selectedReservation.payments?.length ? "Pagamento adicional" : "Sinal da reserva",
+              },
+            }
+          : {}),
+      });
+      setPaymentAmount("");
+      setFinancialReason("");
       setMessage("Valores atualizados.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível atualizar os valores.");
@@ -276,6 +300,7 @@ export function CalendarWorkspace() {
         selectedEnd={selectedEnd}
         onSelect={select}
         onNewReservation={openNewReservation}
+        canCreate={canManageReservations}
       />
 
       {modalOpen && typeof document !== "undefined" ? createPortal(
@@ -323,7 +348,7 @@ export function CalendarWorkspace() {
                       <Link className="button button-secondary" href={`/reservas/${selectedReservation.id}`}>
                         <ExternalLink /> Ver detalhes
                       </Link>
-                      {selectedReservation.status === "PRE_RESERVA" ? (
+                      {canManageReservations && selectedReservation.status === "PRE_RESERVA" ? (
                         <button className="button button-primary" type="button" onClick={confirmReservation} disabled={saving}>
                           <Check /> Confirmar
                         </button>
@@ -331,6 +356,7 @@ export function CalendarWorkspace() {
                     </div>
                   </div>
 
+                  {canManageFinance ? (
                   <form className="mini-finance-form" onSubmit={saveFinancialUpdate}>
                     <div className="mini-section-title">
                       <WalletCards />
@@ -352,10 +378,17 @@ export function CalendarWorkspace() {
                     ) : (
                       <div className="pending-total-note"><Clock3 /> Total ainda não confirmado.</div>
                     )}
-                    <button className="button button-primary button-wide" disabled={saving}>
+                    {Number(confirmedTotal || 0) !== selectedReservation.total_amount ? (
+                      <label className="field">
+                        <span className="label">Motivo da alteração do valor</span>
+                        <textarea className="textarea compact-textarea" maxLength={500} value={financialReason} onChange={(event) => setFinancialReason(event.target.value)} placeholder="Ex.: valor final confirmado com o cliente" />
+                      </label>
+                    ) : null}
+                    <button className="button button-primary button-wide" disabled={saving || (Number(confirmedTotal || 0) !== selectedReservation.total_amount && financialReason.trim().length < 5)}>
                       <Save /> {saving ? "Salvando..." : "Atualizar valores"}
                     </button>
                   </form>
+                  ) : <div className="permission-note">Seu perfil possui acesso somente para consulta.</div>}
                 </div>
               ) : selectedBlock ? (
                 <div className="side-panel-content">
@@ -363,17 +396,15 @@ export function CalendarWorkspace() {
                     <div><span className="eyebrow">Período indisponível</span><h2>Data bloqueada</h2><p>{selectedBlock.reason}</p></div>
                     <Ban />
                   </div>
-                  <button
-                    className="button button-danger"
-                    type="button"
-                    onClick={async () => {
-                      await removeBlockedPeriod(selectedBlock.id);
-                      setSelectedBlockId(null);
-                      setMessage("Bloqueio removido.");
-                    }}
-                  >
-                    <Trash2 /> Remover bloqueio
-                  </button>
+                  {canManageReservations ? (
+                    <button
+                      className="button button-danger"
+                      type="button"
+                      onClick={() => { setBlockDeleteReason(""); setBlockDeleteOpen(true); }}
+                    >
+                      <Trash2 /> Remover bloqueio
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <>
@@ -402,10 +433,14 @@ export function CalendarWorkspace() {
                         <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" max="500" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
                         <label className="field"><span className="label">Cardápio / pacote</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
                         <label className="field"><span className="label">Situação inicial</span><select className="select" value={form.status} onChange={(event) => updateForm("status", event.target.value as ReservationStatus)}><option value="PRE_RESERVA">Pré-reserva</option><option value="CONFIRMADA">Confirmada</option></select></label>
-                        <label className="field"><span className="label">Valor do sinal</span><input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={form.deposit_amount} onChange={(event) => updateForm("deposit_amount", event.target.value)} /></label>
-                        <label className="field"><span className="label">Data do sinal</span><input className="input" type="date" value={form.payment_date} onChange={(event) => updateForm("payment_date", event.target.value)} /></label>
-                        <label className="field"><span className="label">Forma do sinal</span><select className="select" value={form.payment_method} onChange={(event) => updateForm("payment_method", event.target.value as PaymentMethod)}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="CARTAO">Cartão</option><option value="TRANSFERENCIA">Transferência</option><option value="OUTRO">Outro</option></select></label>
-                        <label className="field"><span className="label">Valor total <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Pode ser definido depois" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
+                        {canManageFinance ? (
+                          <>
+                            <label className="field"><span className="label">Valor do sinal</span><input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={form.deposit_amount} onChange={(event) => updateForm("deposit_amount", event.target.value)} /></label>
+                            <label className="field"><span className="label">Data do sinal</span><input className="input" type="date" value={form.payment_date} onChange={(event) => updateForm("payment_date", event.target.value)} /></label>
+                            <label className="field"><span className="label">Forma do sinal</span><select className="select" value={form.payment_method} onChange={(event) => updateForm("payment_method", event.target.value as PaymentMethod)}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="CARTAO">Cartão</option><option value="TRANSFERENCIA">Transferência</option><option value="OUTRO">Outro</option></select></label>
+                            <label className="field"><span className="label">Valor total <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Pode ser definido depois" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
+                          </>
+                        ) : null}
                         <label className="field field-full"><span className="label">Observações</span><textarea className="textarea compact-textarea" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} placeholder="Horários, necessidades especiais e detalhes combinados..." /></label>
                       </div>
                       <button className="button button-primary button-wide" disabled={saving}>
@@ -426,6 +461,36 @@ export function CalendarWorkspace() {
         </div>,
         document.body
       ) : null}
+
+      <ConfirmDialog
+        open={blockDeleteOpen && selectedBlock !== null}
+        title="Remover este bloqueio?"
+        description="A data voltará a ficar disponível. Informe o motivo para preservar a trilha de auditoria."
+        confirmLabel="Remover bloqueio"
+        busy={saving}
+        confirmDisabled={blockDeleteReason.trim().length < 5}
+        onCancel={() => { setBlockDeleteOpen(false); setBlockDeleteReason(""); }}
+        onConfirm={async () => {
+          if (!selectedBlock) return;
+          setSaving(true);
+          try {
+            await removeBlockedPeriod(selectedBlock.id, blockDeleteReason.trim());
+            setSelectedBlockId(null);
+            setBlockDeleteOpen(false);
+            setBlockDeleteReason("");
+            setMessage("Bloqueio removido.");
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Não foi possível remover o bloqueio.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <label className="field">
+          <span className="label">Motivo da remoção</span>
+          <textarea className="textarea" maxLength={500} value={blockDeleteReason} onChange={(event) => setBlockDeleteReason(event.target.value)} placeholder="Ex.: manutenção cancelada" autoFocus />
+        </label>
+      </ConfirmDialog>
     </>
   );
 }

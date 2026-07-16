@@ -3,6 +3,7 @@ import type {
   BlockedPeriodInput,
   CustomerInput,
   PaymentInput,
+  ReservationFinancialUpdate,
   ReservationInput,
 } from "@/lib/types";
 
@@ -73,6 +74,31 @@ export const paymentInputSchema = z.object({
   notes: optionalText(500),
 });
 
+
+export const auditReasonSchema = safeText(5, 500);
+
+export const reservationFinancialUpdateSchema = z
+  .object({
+    total_amount: money.optional(),
+    total_reason: z.string().trim().max(500).optional(),
+    payment: paymentInputSchema.omit({ reservation_id: true }).nullable().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.total_amount === undefined && !value.payment) {
+      context.addIssue({
+        code: "custom",
+        message: "Informe um valor ou um pagamento para atualizar.",
+      });
+    }
+    if (value.total_amount !== undefined && (value.total_reason ?? "").trim().length < 5) {
+      context.addIssue({
+        code: "custom",
+        path: ["total_reason"],
+        message: "Informe o motivo da alteração financeira com pelo menos 5 caracteres.",
+      });
+    }
+  });
+
 export const blockedPeriodInputSchema = z
   .object({
     start_date: dateString,
@@ -103,6 +129,16 @@ export function parsePaymentInput(input: PaymentInput): PaymentInput {
 
 export function parseBlockedPeriodInput(input: BlockedPeriodInput): BlockedPeriodInput {
   return blockedPeriodInputSchema.parse(input) as BlockedPeriodInput;
+}
+
+export function parseAuditReason(input: string): string {
+  return auditReasonSchema.parse(input);
+}
+
+export function parseReservationFinancialUpdate(
+  input: ReservationFinancialUpdate
+): ReservationFinancialUpdate {
+  return reservationFinancialUpdateSchema.parse(input) as ReservationFinancialUpdate;
 }
 
 export function validationMessage(error: unknown) {

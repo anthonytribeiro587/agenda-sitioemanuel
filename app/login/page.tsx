@@ -76,7 +76,7 @@ export default function LoginPage() {
           <div>
             <div className="brand">
               <div className="brand-mark">SE</div>
-              <div><h1 style={{fontSize:16,margin:0}}>Sítio Emanuel</h1><p>Agenda interna</p></div>
+              <div><h1 className="login-brand-title">Sítio Emanuel</h1><p>Agenda interna</p></div>
             </div>
             <h1>Reservas organizadas. Rotina tranquila.</h1>
             <p>Agenda, clientes, pagamentos e histórico em um só lugar — do jeito que o Sítio realmente trabalha.</p>
@@ -92,7 +92,7 @@ export default function LoginPage() {
           <h2>Acesso administrativo</h2>
           <p>Entre com o usuário autorizado para gerenciar a agenda do Sítio Emanuel.</p>
           {error ? <div className="error-box">{error}</div> : null}
-          <form onSubmit={submit} className="form-grid" style={{gridTemplateColumns:"1fr"}}>
+          <form onSubmit={submit} className="form-grid login-single-column-form">
             <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={email} onChange={(e)=>setEmail(e.target.value.slice(0, 254))} required={!demo} autoComplete="username" inputMode="email" maxLength={254} placeholder="seuemail@exemplo.com" /></label>
             <label className="field"><span className="label">Senha</span><input className="input" type="password" value={password} onChange={(e)=>setPassword(e.target.value.slice(0, 256))} required={!demo} autoComplete="current-password" maxLength={256} placeholder="••••••••" /></label>
             <button className="button button-primary" type="submit" disabled={loading}>{loading ? "Entrando..." : demo ? "Entrar na demonstração" : "Entrar"}</button>

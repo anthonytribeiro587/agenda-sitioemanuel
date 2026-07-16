@@ -22,9 +22,11 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase/browser";
 import {
+  parseAuditReason,
   parseBlockedPeriodInput,
   parseCustomerInput,
   parsePaymentInput,
+  parseReservationFinancialUpdate,
   parseReservationInput,
   validationMessage,
 } from "@/lib/validation";
@@ -35,9 +37,12 @@ import type {
   CustomerInput,
   MutationOptions,
   Payment,
+  PaymentDraftInput,
   PaymentInput,
   ProfileRole,
   Reservation,
+  ReservationCreationResult,
+  ReservationFinancialUpdate,
   ReservationInput,
 } from "@/lib/types";
 
@@ -50,19 +55,27 @@ type AgendaContextValue = {
   blockedPeriods: BlockedPeriod[];
   refresh: () => Promise<void>;
   createReservation: (input: ReservationInput) => Promise<Reservation>;
+  createReservationWithPayment: (
+    input: ReservationInput,
+    payment?: PaymentDraftInput | null
+  ) => Promise<ReservationCreationResult>;
   updateReservation: (
     id: string,
     input: Partial<ReservationInput>,
     options?: MutationOptions
   ) => Promise<void>;
-  deleteReservation: (id: string, reason?: string) => Promise<void>;
+  updateReservationFinancial: (
+    id: string,
+    input: ReservationFinancialUpdate
+  ) => Promise<ReservationCreationResult>;
+  deleteReservation: (id: string, reason: string) => Promise<void>;
   createCustomer: (input: CustomerInput) => Promise<Customer>;
   updateCustomer: (id: string, input: CustomerInput) => Promise<void>;
-  deleteCustomer: (id: string, reason?: string) => Promise<void>;
+  deleteCustomer: (id: string, reason: string) => Promise<void>;
   addPayment: (input: PaymentInput) => Promise<Payment>;
-  deletePayment: (id: string, reservationId: string, reason?: string) => Promise<void>;
+  deletePayment: (id: string, reservationId: string, reason: string) => Promise<void>;
   addBlockedPeriod: (input: BlockedPeriodInput) => Promise<BlockedPeriod>;
-  removeBlockedPeriod: (id: string, reason?: string) => Promise<void>;
+  removeBlockedPeriod: (id: string, reason: string) => Promise<void>;
 };
 
 const AgendaContext = createContext<AgendaContextValue | null>(null);
@@ -119,7 +132,7 @@ function normalizeReservation(reservation: Reservation): Reservation {
       reservation.guests_confirmed === null || reservation.guests_confirmed === undefined
         ? null
         : Number(reservation.guests_confirmed),
-    payments: (reservation.payments ?? []).filter((payment) => !payment.voided_at).map(normalizePayment),
+    payments: (reservation.payments ?? []).map(normalizePayment),
   };
 }
 
@@ -131,9 +144,7 @@ function hydrateReservations(
   const customerById = new Map(customers.map((customer) => [customer.id, customer]));
   const paymentsByReservation = new Map<string, Payment[]>();
 
-  payments
-    .filter((payment) => !payment.voided_at)
-    .forEach((payment) => {
+  payments.forEach((payment) => {
       const normalized = normalizePayment(payment);
       const current = paymentsByReservation.get(payment.reservation_id) ?? [];
       current.push(normalized);
@@ -183,6 +194,21 @@ function rpcRow<T>(data: T | T[] | null): T {
   return row;
 }
 
+function rpcCreationResult(data: unknown): ReservationCreationResult {
+  const value = Array.isArray(data) ? data[0] : data;
+  if (!value || typeof value !== "object") {
+    throw new Error("A operação não retornou os dados esperados.");
+  }
+  const result = value as { reservation?: Reservation; payment?: Payment | null };
+  if (!result.reservation) {
+    throw new Error("A operação não retornou a reserva esperada.");
+  }
+  return {
+    reservation: normalizeReservation(result.reservation),
+    payment: result.payment ? normalizePayment(result.payment) : null,
+  };
+}
+
 function databaseMessage(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error ?? "");
   const messages: Array<[string, string]> = [
@@ -207,6 +233,12 @@ function databaseMessage(error: unknown) {
     ["INVALID_STATUS_TRANSITION", "Essa mudança de situação não é permitida."],
     ["RESERVATION_DATE_OUT_OF_RANGE", "A data informada está fora do período permitido."],
     ["PAYMENT_DATE_OUT_OF_RANGE", "A data do pagamento é inválida ou está no futuro."],
+    ["IDEMPOTENCY_KEY_REUSE", "A solicitação foi repetida com dados diferentes e foi bloqueada."],
+    ["REQUEST_KEY_CONFLICT", "A chave da solicitação já pertence a outra operação."],
+    ["FINANCIAL_REASON_REQUIRED", "Informe o motivo da alteração financeira."],
+    ["STATUS_CORRECTION_REASON_REQUIRED", "Informe o motivo da correção de situação."],
+    ["CANCELLED_RESERVATION_PAYMENT_FORBIDDEN", "Não é permitido lançar pagamento em reserva cancelada."],
+    ["MIXED_RESERVATION_MUTATION", "Salve dados, situação e financeiro em operações separadas."],
   ];
 
   const translated = messages.find(([token]) => raw.includes(token));
@@ -299,7 +331,6 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         supabase
           .from("payments")
           .select("*")
-          .is("voided_at", null)
           .order("payment_date", { ascending: false }),
         supabase.from("blocked_periods").select("*").order("start_date"),
       ]);
@@ -424,6 +455,123 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
+  const createReservationWithPayment = useCallback(
+    async (
+      rawInput: ReservationInput,
+      rawPayment: PaymentDraftInput | null = null
+    ): Promise<ReservationCreationResult> => {
+      let input: ReservationInput;
+      let payment: PaymentDraftInput | null;
+      try {
+        input = parseReservationInput(rawInput);
+        const parsed = parseReservationFinancialUpdate({ payment: rawPayment });
+        payment = parsed.payment ?? null;
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+
+      const paymentAmount = Number(payment?.amount ?? 0);
+      if (paymentAmount > 0 && input.total_amount <= 0) {
+        throw new Error("Defina o valor total antes de registrar o sinal.");
+      }
+      if (paymentAmount > input.total_amount) {
+        throw new Error("O sinal não pode ser maior que o valor total da reserva.");
+      }
+
+      let result: ReservationCreationResult;
+      if (isDemo) {
+        const conflictsReservation =
+          isBlockingStatus(input.status) &&
+          reservationsRef.current.some(
+            (reservation) =>
+              isBlockingStatus(reservation.status) &&
+              rangesOverlap(
+                input.start_date,
+                input.end_date,
+                reservation.start_date,
+                reservation.end_date
+              )
+          );
+        const conflictsBlock =
+          isBlockingStatus(input.status) &&
+          blockedPeriodsRef.current.some((period) =>
+            rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
+          );
+        if (conflictsReservation || conflictsBlock) throw new Error("RESERVATION_CONFLICT");
+
+        const now = new Date().toISOString();
+        const reservation = normalizeReservation({
+          ...input,
+          id: randomId("reservation"),
+          request_key: crypto.randomUUID(),
+          created_at: now,
+          updated_at: now,
+          customer: input.customer_id
+            ? customersRef.current.find((customer) => customer.id === input.customer_id) ?? null
+            : null,
+          payments: [],
+        });
+        const createdPayment = payment
+          ? normalizePayment({
+              ...payment,
+              reservation_id: reservation.id,
+              id: randomId("payment"),
+              request_key: crypto.randomUUID(),
+              created_at: now,
+            })
+          : null;
+        reservation.payments = createdPayment ? [createdPayment] : [];
+        result = { reservation, payment: createdPayment };
+      } else {
+        if (!supabase) throw new Error("Banco indisponível.");
+        await ensureProfile();
+        const requestKey = crypto.randomUUID();
+        const { data, error } = await supabase.rpc("create_reservation_with_payment_secure", {
+          p_request_key: requestKey,
+          p_customer_id: input.customer_id,
+          p_church_name: input.church_name,
+          p_contact_name: input.contact_name,
+          p_phone: input.phone,
+          p_email: input.email,
+          p_start_date: input.start_date,
+          p_end_date: input.end_date,
+          p_guests_estimated: input.guests_estimated,
+          p_guests_confirmed: input.guests_confirmed,
+          p_package_name: input.package_name,
+          p_total_amount: input.total_amount,
+          p_status: input.status,
+          p_notes: input.notes,
+          p_payment_amount: payment?.amount ?? null,
+          p_payment_date: payment?.payment_date ?? null,
+          p_payment_method: payment?.method ?? null,
+          p_payment_notes: payment?.notes ?? "",
+          p_payment_request_key: payment ? crypto.randomUUID() : null,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        result = rpcCreationResult(data);
+        result.reservation = normalizeReservation({
+          ...result.reservation,
+          customer: result.reservation.customer_id
+            ? customersRef.current.find(
+                (customer) => customer.id === result.reservation.customer_id
+              ) ?? null
+            : null,
+          payments: result.payment ? [result.payment] : [],
+        });
+      }
+
+      applySnapshot({
+        reservations: [...reservationsRef.current, result.reservation].sort((a, b) =>
+          a.start_date.localeCompare(b.start_date)
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+      return result;
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
   const updateReservation = useCallback(
     async (
       id: string,
@@ -476,6 +624,14 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         const hasDetailChanges = Object.keys(input).some((key) =>
           RESERVATION_DETAIL_KEYS.has(key as keyof ReservationInput)
         );
+        const hasTotalChange =
+          input.total_amount !== undefined && merged.total_amount !== Number(current.total_amount);
+        const hasStatusChange =
+          input.status !== undefined && merged.status !== current.status;
+        const mutationKinds = [hasDetailChanges, hasTotalChange, hasStatusChange].filter(Boolean).length;
+        if (mutationKinds > 1) {
+          throw new Error("Salve dados, situação e financeiro em operações separadas.");
+        }
 
         if (hasDetailChanges) {
           const { data, error } = await supabase.rpc("update_reservation_details_secure", {
@@ -498,28 +654,42 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           row = rpcRow(data as Reservation | Reservation[] | null);
         }
 
-        if (input.total_amount !== undefined && merged.total_amount !== Number(row.total_amount)) {
+        if (hasTotalChange) {
+          let reason: string;
+          try {
+            reason = parseAuditReason(options.reason ?? "");
+          } catch (error) {
+            throw new Error(validationMessage(error));
+          }
           const { data, error } = await supabase.rpc("set_reservation_total_secure", {
             p_request_id: requestId,
             p_id: id,
             p_expected_updated_at: row.updated_at,
             p_total_amount: merged.total_amount,
-            p_reason: options.reason ?? "Atualização do valor combinado pela interface",
+            p_reason: reason,
           });
           if (error) throw new Error(databaseMessage(error));
           row = rpcRow(data as Reservation | Reservation[] | null);
         }
 
-        if (input.status !== undefined && merged.status !== row.status) {
+        if (hasStatusChange) {
+          let reason: string | null = null;
+          if (options.reason) {
+            try {
+              reason = parseAuditReason(options.reason);
+            } catch (error) {
+              throw new Error(validationMessage(error));
+            }
+          }
+          if (merged.status === "CANCELADA" && !reason) {
+            throw new Error("Informe o motivo do cancelamento.");
+          }
           const { data, error } = await supabase.rpc("change_reservation_status_secure", {
             p_request_id: requestId,
             p_id: id,
             p_expected_updated_at: row.updated_at,
             p_status: merged.status,
-            p_reason:
-              merged.status === "CANCELADA"
-                ? options.reason ?? "Cancelamento administrativo pela interface"
-                : options.reason ?? null,
+            p_reason: reason,
           });
           if (error) throw new Error(databaseMessage(error));
           row = rpcRow(data as Reservation | Reservation[] | null);
@@ -546,8 +716,103 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
+  const updateReservationFinancial = useCallback(
+    async (
+      id: string,
+      rawInput: ReservationFinancialUpdate
+    ): Promise<ReservationCreationResult> => {
+      const current = reservationsRef.current.find((reservation) => reservation.id === id);
+      if (!current) throw new Error("Reserva não encontrada.");
+
+      let input: ReservationFinancialUpdate;
+      try {
+        input = parseReservationFinancialUpdate(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+
+      const currentPaid = (current.payments ?? []).reduce(
+        (total, payment) => total + Number(payment.amount),
+        0
+      );
+      const nextTotal = input.total_amount ?? current.total_amount;
+      const paymentAmount = Number(input.payment?.amount ?? 0);
+      if (nextTotal < currentPaid) {
+        throw new Error("O valor combinado não pode ser menor que o total recebido.");
+      }
+      if (paymentAmount > nextTotal - currentPaid) {
+        throw new Error("O pagamento excede o saldo atual da reserva.");
+      }
+
+      let result: ReservationCreationResult;
+      if (isDemo) {
+        const updatedReservation = normalizeReservation({
+          ...current,
+          total_amount: nextTotal,
+          updated_at: new Date().toISOString(),
+        });
+        const createdPayment = input.payment
+          ? normalizePayment({
+              ...input.payment,
+              reservation_id: id,
+              id: randomId("payment"),
+              request_key: crypto.randomUUID(),
+              created_at: new Date().toISOString(),
+            })
+          : null;
+        updatedReservation.payments = createdPayment
+          ? [...(current.payments ?? []), createdPayment]
+          : current.payments ?? [];
+        result = { reservation: updatedReservation, payment: createdPayment };
+      } else {
+        if (!supabase) throw new Error("Banco indisponível.");
+        await ensureProfile();
+        const totalChanged =
+          input.total_amount !== undefined && input.total_amount !== current.total_amount;
+        const { data, error } = await supabase.rpc("update_reservation_financial_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_expected_updated_at: current.updated_at,
+          p_total_amount: totalChanged ? input.total_amount : null,
+          p_total_reason: totalChanged ? input.total_reason ?? null : null,
+          p_payment_amount: input.payment?.amount ?? null,
+          p_payment_date: input.payment?.payment_date ?? null,
+          p_payment_method: input.payment?.method ?? null,
+          p_payment_notes: input.payment?.notes ?? "",
+          p_payment_request_key: input.payment ? crypto.randomUUID() : null,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        result = rpcCreationResult(data);
+        result.reservation = normalizeReservation({
+          ...current,
+          ...result.reservation,
+          customer: current.customer ?? null,
+          payments: result.payment
+            ? [...(current.payments ?? []), result.payment]
+            : current.payments ?? [],
+        });
+      }
+
+      applySnapshot({
+        reservations: reservationsRef.current.map((reservation) =>
+          reservation.id === id ? result.reservation : reservation
+        ),
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current,
+      });
+      return result;
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
   const deleteReservation = useCallback(
-    async (id: string, reason = "Exclusão administrativa de cadastro duplicado") => {
+    async (id: string, rawReason: string) => {
+      let reason: string;
+      try {
+        reason = parseAuditReason(rawReason);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
       if (!isDemo) {
         if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
@@ -649,7 +914,13 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteCustomer = useCallback(
-    async (id: string, reason = "Exclusão administrativa de cadastro sem reservas") => {
+    async (id: string, rawReason: string) => {
+      let reason: string;
+      try {
+        reason = parseAuditReason(rawReason);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
       if (!isDemo) {
         if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
@@ -724,17 +995,36 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     async (
       id: string,
       reservationId: string,
-      reason = "Anulação de lançamento informada pela interface"
+      rawReason: string
     ) => {
-      if (!isDemo) {
+      let reason: string;
+      try {
+        reason = parseAuditReason(rawReason);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+      let voidedPayment: Payment;
+      if (isDemo) {
+        const currentPayment = reservationsRef.current
+          .find((reservation) => reservation.id === reservationId)
+          ?.payments?.find((payment) => payment.id === id);
+        if (!currentPayment) throw new Error("Pagamento não encontrado.");
+        voidedPayment = {
+          ...currentPayment,
+          voided_at: new Date().toISOString(),
+          void_reason: reason,
+          voided_by: "demo-admin",
+        };
+      } else {
         if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { error } = await supabase.rpc("void_payment_secure", {
+        const { data, error } = await supabase.rpc("void_payment_secure", {
           p_request_id: crypto.randomUUID(),
           p_payment_id: id,
           p_reason: reason,
         });
         if (error) throw new Error(databaseMessage(error));
+        voidedPayment = normalizePayment(rpcRow(data as Payment | Payment[] | null));
       }
 
       applySnapshot({
@@ -742,7 +1032,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           reservation.id === reservationId
             ? {
                 ...reservation,
-                payments: (reservation.payments ?? []).filter((payment) => payment.id !== id),
+                payments: (reservation.payments ?? []).map((payment) =>
+                  payment.id === id ? voidedPayment : payment
+                ),
               }
             : reservation
         ),
@@ -810,7 +1102,13 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const removeBlockedPeriod = useCallback(
-    async (id: string, reason = "Remoção administrativa de bloqueio") => {
+    async (id: string, rawReason: string) => {
+      let reason: string;
+      try {
+        reason = parseAuditReason(rawReason);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
       if (!isDemo) {
         if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
@@ -841,7 +1139,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       blockedPeriods,
       refresh,
       createReservation,
+      createReservationWithPayment,
       updateReservation,
+      updateReservationFinancial,
       deleteReservation,
       createCustomer,
       updateCustomer,
@@ -857,6 +1157,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       blockedPeriods,
       createCustomer,
       createReservation,
+      createReservationWithPayment,
       customers,
       deleteCustomer,
       deletePayment,
@@ -869,6 +1170,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       role,
       updateCustomer,
       updateReservation,
+      updateReservationFinancial,
     ]
   );
 

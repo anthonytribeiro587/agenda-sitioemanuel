@@ -99,6 +99,8 @@ export default function ReservationDetailsPage() {
   const [feedback, setFeedback] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [financialReason, setFinancialReason] = useState("");
   const [paymentToDelete, setPaymentToDelete] = useState<string | null>(null);
   const [paymentVoidReason, setPaymentVoidReason] = useState("");
 
@@ -107,10 +109,14 @@ export default function ReservationDetailsPage() {
 
     const paymentItems = (reservation.payments ?? []).map((payment) => ({
       id: `payment-${payment.id}`,
-      date: payment.payment_date,
-      title: `${formatCurrency(payment.amount)} recebido`,
-      description: `${payment.method}${payment.notes ? ` • ${payment.notes}` : ""}`,
-      tone: "payment" as const,
+      date: (payment.voided_at ?? payment.payment_date).slice(0, 10),
+      title: payment.voided_at
+        ? `${formatCurrency(payment.amount)} anulado`
+        : `${formatCurrency(payment.amount)} recebido`,
+      description: payment.voided_at
+        ? `Motivo: ${payment.void_reason || "Não informado"}`
+        : `${payment.method}${payment.notes ? ` • ${payment.notes}` : ""}`,
+      tone: payment.voided_at ? ("status" as const) : ("payment" as const),
     }));
 
     return [
@@ -209,8 +215,9 @@ export default function ReservationDetailsPage() {
     setFeedback("");
     try {
       await updateReservation(currentReservation.id, { total_amount: value }, {
-        reason: "Atualização do valor combinado após conferência",
+        reason: financialReason.trim(),
       });
+      setFinancialReason("");
       setFeedback(value > 0 ? "Valor combinado atualizado." : "Valor combinado removido.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Não foi possível atualizar o valor combinado.");
@@ -232,12 +239,6 @@ export default function ReservationDetailsPage() {
       return;
     }
 
-    const totalAmount = Number(draft.total_amount || 0);
-    if (totalAmount > 0 && totalAmount < paid) {
-      setFeedback("O valor combinado não pode ser menor que o total já recebido.");
-      return;
-    }
-
     setSaving(true);
     setFeedback("");
     try {
@@ -253,7 +254,6 @@ export default function ReservationDetailsPage() {
         guests_confirmed: draft.guests_confirmed ? Number(draft.guests_confirmed) : null,
         package_name: draft.package_name.trim() || "A definir",
         notes: draft.notes.trim(),
-        ...(canManageFinance ? { total_amount: totalAmount } : {}),
       });
       setFeedback("Dados da reserva atualizados.");
       setActiveTab("resumo");
@@ -310,10 +310,7 @@ export default function ReservationDetailsPage() {
         return;
       }
 
-      await deleteReservation(
-        currentReservation.id,
-        "Exclusão administrativa de pré-reserva duplicada, sem histórico financeiro"
-      );
+      await deleteReservation(currentReservation.id, deleteReason.trim());
       router.replace("/reservas");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Não foi possível concluir a ação.");
@@ -445,10 +442,11 @@ export default function ReservationDetailsPage() {
                   onChange={(event) => void changeStatus(event.target.value as ReservationStatus)}
                   disabled={saving || !canManageReservations}
                 >
-                  <option value="PRE_RESERVA">Pré-reserva</option>
-                  <option value="CONFIRMADA">Confirmada</option>
-                  <option value="REALIZADA">Realizada</option>
-                  <option value="CANCELADA">Cancelada</option>
+                  <option value={currentReservation.status}>
+                    {currentReservation.status === "PRE_RESERVA" ? "Pré-reserva" : currentReservation.status === "CONFIRMADA" ? "Confirmada" : currentReservation.status === "REALIZADA" ? "Realizada" : "Cancelada"}
+                  </option>
+                  {currentReservation.status === "PRE_RESERVA" ? <option value="CONFIRMADA">Confirmada</option> : null}
+                  {currentReservation.status === "CONFIRMADA" ? <option value="REALIZADA">Realizada</option> : null}
                 </select>
               </section>
 
@@ -499,7 +497,17 @@ export default function ReservationDetailsPage() {
                       placeholder="Preencher após a negociação"
                     />
                   </label>
-                  <button className="button button-primary" disabled={saving}><Save /> Salvar valor</button>
+                  <label className="field">
+                    <span className="label">Motivo da alteração</span>
+                    <textarea
+                      className="textarea compact-textarea"
+                      value={financialReason}
+                      maxLength={500}
+                      onChange={(event) => setFinancialReason(event.target.value)}
+                      placeholder="Ex.: valor final confirmado ou correção após conferência"
+                    />
+                  </label>
+                  <button className="button button-primary" disabled={saving || financialReason.trim().length < 5}><Save /> Salvar valor</button>
                 </form>
               ) : (
                 <p className="permission-note">Apenas o administrador ou o financeiro pode alterar valores.</p>
@@ -511,7 +519,7 @@ export default function ReservationDetailsPage() {
                 <WalletCards />
                 <div><h2>Novo pagamento</h2><p>Registre o sinal ou qualquer valor recebido.</p></div>
               </div>
-              {canManageFinance ? (
+              {canManageFinance && currentReservation.status !== "CANCELADA" ? (
               <form onSubmit={submitPayment} className="payment-form-grid">
                 <label className="field">
                   <span className="label">Valor recebido</span>
@@ -538,7 +546,7 @@ export default function ReservationDetailsPage() {
                 <button className="button button-primary field-full" disabled={saving}><Save /> Registrar pagamento</button>
               </form>
               ) : (
-                <p className="permission-note">Seu perfil possui acesso somente para consulta financeira.</p>
+                <p className="permission-note">{currentReservation.status === "CANCELADA" ? "Reservas canceladas não aceitam novos pagamentos." : "Seu perfil possui acesso somente para consulta financeira."}</p>
               )}
             </section>
 
@@ -552,11 +560,11 @@ export default function ReservationDetailsPage() {
                   {[...(currentReservation.payments ?? [])]
                     .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
                     .map((payment) => (
-                      <article className="modern-payment-row" key={payment.id}>
+                      <article className={`modern-payment-row ${payment.voided_at ? "voided" : ""}`} key={payment.id}>
                         <div className="payment-icon"><CircleDollarSign /></div>
-                        <div className="payment-main"><strong>{formatCurrency(payment.amount)}</strong><span>{payment.notes || "Pagamento"}</span></div>
-                        <div className="payment-meta"><strong>{formatDate(payment.payment_date)}</strong><span>{payment.method}</span></div>
-                        {canManageFinance ? (
+                        <div className="payment-main"><strong>{formatCurrency(payment.amount)}</strong><span>{payment.voided_at ? `Anulado: ${payment.void_reason || "motivo não informado"}` : payment.notes || "Pagamento"}</span></div>
+                        <div className="payment-meta"><strong>{formatDate(payment.payment_date)}</strong><span>{payment.voided_at ? "ANULADO" : payment.method}</span></div>
+                        {canManageFinance && !payment.voided_at ? (
                           <button
                             className="icon-danger-button"
                             type="button"
@@ -592,7 +600,6 @@ export default function ReservationDetailsPage() {
                 <label className="field"><span className="label">Data final</span><input className="input" type="date" min={draft.start_date} value={draft.end_date} onChange={(event) => updateDraft("end_date", event.target.value)} required /></label>
                 <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" max="500" value={draft.guests_estimated} onChange={(event) => updateDraft("guests_estimated", event.target.value)} required /></label>
                 <label className="field"><span className="label">Pessoas confirmadas</span><input className="input" type="number" min="1" max="500" value={draft.guests_confirmed} onChange={(event) => updateDraft("guests_confirmed", event.target.value)} placeholder="Ainda não informado" /></label>
-                <label className="field field-full"><span className="label">Valor combinado</span><input className="input" type="number" min="0" max="1000000" step="0.01" value={draft.total_amount} onChange={(event) => updateDraft("total_amount", event.target.value)} placeholder="Pode ficar em branco até a negociação" disabled={!canManageFinance} /></label>
                 <label className="field field-full"><span className="label">Observações</span><textarea className="textarea" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} /></label>
               </div>
               <div className="edit-form-actions">
@@ -614,7 +621,7 @@ export default function ReservationDetailsPage() {
                 </button>
               ) : null}
               {canDeleteReservation ? (
-                <button className="button button-danger" type="button" onClick={() => setPendingAction("delete")}>
+                <button className="button button-danger" type="button" onClick={() => { setDeleteReason(""); setPendingAction("delete"); }}>
                   <Trash2 /> Excluir cadastro duplicado
                 </button>
               ) : null}
@@ -652,8 +659,11 @@ export default function ReservationDetailsPage() {
         confirmLabel={pendingAction === "delete" ? "Excluir reserva" : "Cancelar reserva"}
         tone={pendingAction === "delete" ? "danger" : "warning"}
         busy={saving}
-        confirmDisabled={pendingAction === "cancel" && cancelReason.trim().length < 5}
-        onCancel={() => { setPendingAction(null); setCancelReason(""); }}
+        confirmDisabled={
+          (pendingAction === "cancel" && cancelReason.trim().length < 5) ||
+          (pendingAction === "delete" && deleteReason.trim().length < 5)
+        }
+        onCancel={() => { setPendingAction(null); setCancelReason(""); setDeleteReason(""); }}
         onConfirm={confirmPendingAction}
       >
         {pendingAction === "cancel" ? (
@@ -665,6 +675,18 @@ export default function ReservationDetailsPage() {
               maxLength={500}
               onChange={(event) => setCancelReason(event.target.value)}
               placeholder="Ex.: cliente desistiu do período"
+              autoFocus
+            />
+          </label>
+        ) : pendingAction === "delete" ? (
+          <label className="field">
+            <span className="label">Motivo da exclusão</span>
+            <textarea
+              className="textarea"
+              value={deleteReason}
+              maxLength={500}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              placeholder="Ex.: pré-reserva criada em duplicidade"
               autoFocus
             />
           </label>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CircleDollarSign, PiggyBank, ReceiptText, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowRight, CircleDollarSign, PiggyBank, ReceiptText, WalletCards } from "lucide-react";
 import { useAgenda } from "@/components/AgendaProvider";
 import { MetricCard } from "@/components/MetricCard";
 import { formatCurrency, formatDate, paymentTotal, reservationBalance } from "@/lib/format";
@@ -13,8 +13,15 @@ export default function FinanceiroPage() {
   const contracted = withConfirmedTotal.reduce((total, item) => total + Number(item.total_amount), 0);
   const received = reservations.reduce((total, item) => total + paymentTotal(item.payments), 0);
   const receivable = withConfirmedTotal.reduce((total, item) => total + reservationBalance(item), 0);
+  const cancelledWithReceipts = reservations
+    .filter((item) => item.status === "CANCELADA" && paymentTotal(item.payments) > 0)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const cancelledReceived = cancelledWithReceipts.reduce(
+    (total, item) => total + paymentTotal(item.payments),
+    0
+  );
   const payments = reservations
-    .flatMap((reservation) => (reservation.payments ?? []).map((payment) => ({ payment, reservation })))
+    .flatMap((reservation) => (reservation.payments ?? []).filter((payment) => !payment.voided_at).map((payment) => ({ payment, reservation })))
     .sort((a, b) => b.payment.payment_date.localeCompare(a.payment.payment_date));
 
   return (
@@ -28,6 +35,23 @@ export default function FinanceiroPage() {
         <MetricCard label="Total recebido" value={formatCurrency(received)} helper="Sinais e pagamentos registrados" icon={PiggyBank} />
         <MetricCard label="Saldo a receber" value={formatCurrency(receivable)} helper="Total confirmado menos pagamentos" icon={WalletCards} />
       </div></div></section>
+
+      {cancelledWithReceipts.length ? (
+        <section className="panel compact-panel financial-exception-panel">
+          <div className="panel-header"><div><h3 className="panel-title">Canceladas com recebimentos</h3><p className="panel-subtitle">Esses valores não entram no saldo a receber e precisam de conferência de devolução, crédito ou retenção.</p></div><AlertTriangle /></div>
+          <div className="panel-body">
+            <div className="security-notice-inline"><AlertTriangle /> {cancelledWithReceipts.length} reserva(s) cancelada(s), total recebido de {formatCurrency(cancelledReceived)}.</div>
+            <div className="reservation-list">
+              {cancelledWithReceipts.map((reservation) => (
+                <article className="reservation-card finance-card" key={reservation.id}>
+                  <div><h3>{reservation.church_name}</h3><div className="reservation-meta"><span>{formatDate(reservation.start_date, "dd/MM/yyyy")}</span><span>Recebido: {formatCurrency(paymentTotal(reservation.payments))}</span><span>Cancelada</span></div></div>
+                  <div className="reservation-finance"><strong>{formatCurrency(paymentTotal(reservation.payments))}</strong><span>conferir destino</span><Link href={`/reservas/${reservation.id}`} className="button button-secondary button-sm">Abrir <ArrowRight /></Link></div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="finance-grid">
         <section className="panel compact-panel">

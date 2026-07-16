@@ -21,3 +21,84 @@
   font-size: 10px;
   line-height: 1.45;
 }
+
+/* Exceções financeiras que exigem conciliação humana. */
+.security-notice-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(169, 105, 18, .24);
+  border-radius: 9px;
+  color: #79510f;
+  background: #fff8e8;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.security-notice-inline svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.financial-exception-panel {
+  margin: 13px 0;
+  border-color: rgba(169, 105, 18, .22);
+}
+
+.financial-exception-panel > .panel-header > svg {
+  width: 20px;
+  color: #9b6c18;
+}
+
+.report-financial-warning {
+  margin: 0 0 13px;
+}
+
+.modern-payment-row.voided {
+  opacity: .68;
+  background: repeating-linear-gradient(-45deg, rgba(120, 126, 123, .04), rgba(120, 126, 123, .04) 6px, transparent 6px, transparent 12px);
+}
+
+.modern-payment-row.voided .payment-main strong {
+  text-decoration: line-through;
+}
+
+/* CSP estrita: posições do calendário sem atributos style inline. */
+.calendar-weeks-4 { --calendar-weeks: 4; }
+.calendar-weeks-5 { --calendar-weeks: 5; }
+.calendar-weeks-6 { --calendar-weeks: 6; }
+.calendar-col-1 { grid-column: 1; }
+.calendar-col-2 { grid-column: 2; }
+.calendar-col-3 { grid-column: 3; }
+.calendar-col-4 { grid-column: 4; }
+.calendar-col-5 { grid-column: 5; }
+.calendar-col-6 { grid-column: 6; }
+.calendar-col-7 { grid-column: 7; }
+.calendar-start-1 { grid-column-start: 1; }
+.calendar-start-2 { grid-column-start: 2; }
+.calendar-start-3 { grid-column-start: 3; }
+.calendar-start-4 { grid-column-start: 4; }
+.calendar-start-5 { grid-column-start: 5; }
+.calendar-start-6 { grid-column-start: 6; }
+.calendar-start-7 { grid-column-start: 7; }
+.calendar-end-2 { grid-column-end: 2; }
+.calendar-end-3 { grid-column-end: 3; }
+.calendar-end-4 { grid-column-end: 4; }
+.calendar-end-5 { grid-column-end: 5; }
+.calendar-end-6 { grid-column-end: 6; }
+.calendar-end-7 { grid-column-end: 7; }
+.calendar-end-8 { grid-column-end: 8; }
+.calendar-row-1 { grid-row: 1; }
+
+.login-brand-title { margin: 0; font-size: 16px; }
+.login-single-column-form { grid-template-columns: 1fr; }
+.config-demo-box { margin-top: 14px; }
+.config-inline-icon { margin-right: 7px; vertical-align: -4px; }
+.config-empty-left { text-align: left; }
+.config-next-title { display: block; margin-bottom: 6px; color: var(--ink); }
+.config-google-button { width: 100%; margin-top: 14px; }
+.config-checklist,
+.config-checklist .login-feature { color: var(--ink); }
