@@ -74,12 +74,14 @@ export default function LoginPage() {
       <div className="login-card">
         <section className="login-visual">
           <div>
-            <div className="brand">
+            <div className="brand login-brand">
               <div className="brand-mark">SE</div>
               <div><h1 className="login-brand-title">Sítio Emanuel</h1><p>Agenda interna</p></div>
             </div>
-            <h1>Reservas organizadas. Rotina tranquila.</h1>
-            <p>Agenda, clientes, pagamentos e histórico em um só lugar — do jeito que o Sítio realmente trabalha.</p>
+            <div className="login-hero-copy">
+              <h1>Reservas organizadas. Rotina tranquila.</h1>
+              <p>Agenda, clientes, pagamentos e histórico em um só lugar — do jeito que o Sítio realmente trabalha.</p>
+            </div>
           </div>
           <div className="login-features">
             <div className="login-feature"><CalendarCheck2 size={18}/> Controle visual de datas e reservas</div>
@@ -88,10 +90,10 @@ export default function LoginPage() {
           </div>
         </section>
         <section className="login-form">
-          <LockKeyhole size={28} color="#245f4a" />
+          <div className="login-lock-icon" aria-hidden="true"><LockKeyhole size={22} /></div>
           <h2>Acesso administrativo</h2>
           <p>Entre com o usuário autorizado para gerenciar a agenda do Sítio Emanuel.</p>
-          {error ? <div className="error-box">{error}</div> : null}
+          {error ? <div className="error-box login-error" role="alert" aria-live="polite">{error}</div> : null}
           <form onSubmit={submit} className="form-grid login-single-column-form">
             <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={email} onChange={(e)=>setEmail(e.target.value.slice(0, 254))} required={!demo} autoComplete="username" inputMode="email" maxLength={254} placeholder="seuemail@exemplo.com" /></label>
             <label className="field"><span className="label">Senha</span><input className="input" type="password" value={password} onChange={(e)=>setPassword(e.target.value.slice(0, 256))} required={!demo} autoComplete="current-password" maxLength={256} placeholder="••••••••" /></label>

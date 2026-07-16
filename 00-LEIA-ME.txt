@@ -1,0 +1,22 @@
+CORREÇÃO — LOGIN ADMIN + MOBILE
+
+Arquivos alterados:
+- app/api/profile/bootstrap/route.ts
+- app/login/page.tsx
+- app/globals.css
+- .env.example (somente documentação)
+
+O que mudou:
+1. Todo e-mail explicitamente listado em ADMIN_BOOTSTRAP_EMAILS pode criar seu perfil ADMIN no primeiro login, mesmo que o primeiro administrador já exista.
+2. Usuários fora da lista continuam bloqueados.
+3. Usuários desativados continuam bloqueados e não são reativados automaticamente.
+4. A tela de login no celular ficou compacta: o formulário aparece logo após a identificação do Sítio, sem o bloco institucional ocupar quase toda a tela.
+
+IMPORTANTE NA VERCEL:
+- Em ADMIN_BOOTSTRAP_EMAILS, informe os e-mails completos separados por vírgula e sem aspas.
+  Exemplo: seuemail@gmail.com,outroemail@hotmail.com
+- Marque a variável para Production e Preview.
+- Após alterar uma variável, faça um novo deploy/redeploy. Um deploy antigo não recebe automaticamente o novo valor.
+- O e-mail usado no login deve ser exatamente o mesmo criado no Supabase Authentication e precisa estar confirmado.
+
+Não é necessário executar outra migration SQL para esta correção.

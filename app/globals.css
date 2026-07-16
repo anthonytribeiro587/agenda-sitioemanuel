@@ -367,8 +367,10 @@ tr:last-child td { border-bottom: 0; }
 .login-feature { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.75); font-size: 11px; }
 .login-feature svg { color: #efd493; }
 .login-form { display: flex; flex-direction: column; justify-content: center; padding: 46px; background: var(--panel); }
+.login-lock-icon { width: 40px; height: 40px; display: grid; place-items: center; margin-bottom: 10px; border-radius: 12px; color: var(--green-dark); background: var(--green-soft); }
 .login-form h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 31px; font-weight: 500; letter-spacing: -.035em; }
 .login-form > p { margin: 10px 0 23px; color: var(--muted); line-height: 1.55; }
+.login-error { margin-bottom: 14px; }
 .demo-box { margin-top: 15px; padding: 12px; border-radius: 12px; color: var(--green); background: var(--green-soft); font-size: 10px; line-height: 1.5; }
 
 .mobile-overlay { display: none; }
@@ -390,9 +392,9 @@ tr:last-child td { border-bottom: 0; }
   .content { padding: 22px 16px 38px; }
   .topbar { height: 62px; padding: 0 16px; }
   .main-area::before { width: 190px; height: 140px; opacity: .08; }
-  .login-card { grid-template-columns: 1fr; }
-  .login-visual { min-height: 300px; padding: 32px; }
-  .login-form { padding: 32px; }
+  .login-card { grid-template-columns: 1fr; min-height: 0; }
+  .login-visual { min-height: 260px; padding: 28px 32px; }
+  .login-form { padding: 30px 32px 34px; }
 }
 @media (max-width: 640px) {
   .grid-4, .grid-3, .grid-2, .form-grid, .info-grid, .compact-info-grid { grid-template-columns: 1fr; }
@@ -420,4 +422,59 @@ tr:last-child td { border-bottom: 0; }
   .reservation-finance { grid-column: 2; min-width: 0; text-align: left; }
   .finance-card .reservation-finance { grid-column: auto; }
   .topbar-subtitle, .connected-chip, .demo-chip { display: none; }
+
+  /* Login mobile: identidade preservada, formulário visível sem rolagem excessiva. */
+  .login-page {
+    min-height: 100dvh;
+    place-items: start center;
+    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .login-card {
+    width: min(430px, 100%);
+    min-height: 0;
+    border-radius: 20px;
+    box-shadow: 0 18px 48px rgba(34,54,44,.16);
+  }
+  .login-visual {
+    min-height: 0;
+    padding: 17px 20px 15px;
+    border-bottom-width: 3px;
+  }
+  .login-brand {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0;
+    border-bottom: 0;
+  }
+  .login-brand .brand-mark {
+    width: 43px;
+    height: 43px;
+    flex-basis: 43px;
+    background-size: 34px 34px;
+  }
+  .login-brand h1::before { font-size: 18px; }
+  .login-brand p::before { font-size: 9px; }
+  .login-hero-copy,
+  .login-features { display: none; }
+  .login-form {
+    justify-content: flex-start;
+    padding: 20px 20px 23px;
+  }
+  .login-lock-icon {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+  }
+  .login-lock-icon svg { width: 18px; height: 18px; }
+  .login-form h2 { font-size: 26px; line-height: 1.04; }
+  .login-form > p { margin: 7px 0 15px; font-size: 11px; line-height: 1.42; }
+  .login-single-column-form { gap: 10px; }
+  .login-single-column-form .field { gap: 5px; }
+  .login-single-column-form .label { font-size: 9.5px; }
+  .login-single-column-form .input { min-height: 43px; height: 43px; padding: 9px 11px; }
+  .login-single-column-form .button { width: 100%; min-height: 43px; margin-top: 1px; }
+  .login-error { margin: 0 0 11px; padding: 10px 11px; font-size: 10px; line-height: 1.4; }
+  .demo-box { margin-top: 11px; }
 }

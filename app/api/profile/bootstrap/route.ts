@@ -54,8 +54,8 @@ export async function POST(request: Request) {
     return noStoreJson({ ok: true, role: existing.role });
   }
 
-  // Fail closed: new authenticated users never become staff automatically.
-  // Only a pre-authorized email may create the very first ADMIN profile.
+  // Fail closed: authenticated users never receive access unless their e-mail
+  // is explicitly present in the server-only ADMIN_BOOTSTRAP_EMAILS allowlist.
   const bootstrapEmails = allowedBootstrapEmails();
   if (!bootstrapEmails.has(email)) {
     console.warn("unauthorized profile bootstrap attempt", {
@@ -70,35 +70,73 @@ export async function POST(request: Request) {
   const metadataName =
     typeof user.user_metadata?.name === "string" ? user.user_metadata.name.trim() : "";
   const fallbackName = email.split("@")[0] || "Administrador";
+  const profileName = (metadataName || fallbackName).slice(0, 120);
 
+  // Preserve the atomic database bootstrap for the first administrator.
   const { data: bootstrapped, error: bootstrapError } = await admin.rpc(
     "bootstrap_first_admin",
     {
       p_user_id: user.id,
       p_email: email,
-      p_name: (metadataName || fallbackName).slice(0, 120),
+      p_name: profileName,
     }
   );
 
-  if (bootstrapError) {
-    const alreadyCompleted = bootstrapError.message.includes("BOOTSTRAP_ALREADY_COMPLETED");
+  if (!bootstrapError) {
+    const profile = Array.isArray(bootstrapped) ? bootstrapped[0] : bootstrapped;
+    if (!profile || profile.role !== "ADMIN" || !profile.active) {
+      return noStoreJson({ error: "Não foi possível concluir a autorização." }, { status: 500 });
+    }
+    return noStoreJson({ ok: true, role: "ADMIN" }, { status: 201 });
+  }
+
+  const alreadyCompleted = bootstrapError.message.includes("BOOTSTRAP_ALREADY_COMPLETED");
+  if (!alreadyCompleted) {
     console.warn("profile bootstrap refused", {
       code: bootstrapError.code,
       userId: user.id,
-      alreadyCompleted,
+      alreadyCompleted: false,
     });
-    return noStoreJson(
-      {
-        error: alreadyCompleted
-          ? "O primeiro administrador já foi definido. Solicite acesso a ele."
-          : "Não foi possível concluir a autorização.",
-      },
-      { status: alreadyCompleted ? 403 : 500 }
-    );
+    return noStoreJson({ error: "Não foi possível concluir a autorização." }, { status: 500 });
   }
 
-  const profile = Array.isArray(bootstrapped) ? bootstrapped[0] : bootstrapped;
-  if (!profile || profile.role !== "ADMIN") {
+  // The first administrator already exists. An e-mail explicitly kept in the
+  // allowlist may still provision its own ADMIN profile on its first login.
+  // The service role is used only on this protected, same-origin server route.
+  const { data: created, error: createError } = await admin
+    .from("profiles")
+    .insert({
+      id: user.id,
+      name: profileName,
+      email,
+      role: "ADMIN",
+      active: true,
+    })
+    .select("id, active, role")
+    .single();
+
+  if (createError) {
+    // A repeated or simultaneous request may have created the profile first.
+    if (createError.code === "23505") {
+      const { data: concurrentProfile, error: concurrentError } = await admin
+        .from("profiles")
+        .select("id, active, role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!concurrentError && concurrentProfile?.active && concurrentProfile.role === "ADMIN") {
+        return noStoreJson({ ok: true, role: "ADMIN" });
+      }
+    }
+
+    console.error("allowlisted admin profile creation failed", {
+      code: createError.code,
+      userId: user.id,
+    });
+    return noStoreJson({ error: "Não foi possível concluir a autorização." }, { status: 500 });
+  }
+
+  if (!created?.active || created.role !== "ADMIN") {
     return noStoreJson({ error: "Não foi possível concluir a autorização." }, { status: 500 });
   }
 
