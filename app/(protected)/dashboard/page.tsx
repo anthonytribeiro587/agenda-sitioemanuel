@@ -88,24 +88,54 @@ export default function DashboardPage() {
       </section>
 
       <div className="dashboard-content-grid">
-        <section className="panel compact-panel dashboard-upcoming-panel">
-          <div className="panel-header">
-            <div><h3 className="panel-title">Próximas reservas</h3><p className="panel-subtitle">Eventos futuros em ordem de data.</p></div>
-            <Link href="/reservas" className="text-link">Ver todas <ArrowRight /></Link>
-          </div>
-          <div className="panel-body dashboard-list-body">
-            {data.upcoming.length ? data.upcoming.slice(0, 6).map((reservation) => (
-              <Link className="dashboard-reservation-row" href={`/reservas/${reservation.id}`} key={reservation.id}>
-                <div className="dashboard-date-tile"><strong>{reservation.start_date.slice(8, 10)}</strong><span>{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${reservation.start_date}T12:00:00Z`)).replace(".", "")}</span></div>
-                <div className="dashboard-reservation-copy">
-                  <div><strong>{reservation.church_name}</strong><StatusBadge status={reservation.status} /></div>
-                  <span>{formatRange(reservation.start_date, reservation.end_date)} • {reservation.guests_confirmed ?? reservation.guests_estimated} pessoas</span>
-                </div>
+        <div className="dashboard-main-stack">
+          <section className="panel compact-panel dashboard-upcoming-panel">
+            <div className="panel-header">
+              <div><h3 className="panel-title">Próximas reservas</h3><p className="panel-subtitle">Eventos futuros em ordem de data.</p></div>
+              <Link href="/reservas" className="text-link">Ver todas <ArrowRight /></Link>
+            </div>
+            <div className="panel-body dashboard-list-body">
+              {data.upcoming.length ? data.upcoming.slice(0, 6).map((reservation) => (
+                <Link className="dashboard-reservation-row" href={`/reservas/${reservation.id}`} key={reservation.id}>
+                  <div className="dashboard-date-tile"><strong>{reservation.start_date.slice(8, 10)}</strong><span>{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${reservation.start_date}T12:00:00Z`)).replace(".", "")}</span></div>
+                  <div className="dashboard-reservation-copy">
+                    <div><strong>{reservation.church_name}</strong><StatusBadge status={reservation.status} /></div>
+                    <span>{formatRange(reservation.start_date, reservation.end_date)} • {reservation.guests_confirmed ?? reservation.guests_estimated} pessoas</span>
+                  </div>
+                  <ArrowRight className="row-arrow" />
+                </Link>
+              )) : <div className="empty compact-empty">Nenhuma reserva futura cadastrada.</div>}
+            </div>
+          </section>
+
+          <section className="panel compact-panel dashboard-quick-panel">
+            <div className="panel-header">
+              <div><h3 className="panel-title">Ações rápidas</h3><p className="panel-subtitle">Atalhos para a rotina de atendimento.</p></div>
+            </div>
+            <div className="panel-body dashboard-quick-grid">
+              <Link href="/agenda" className="dashboard-quick-link">
+                <div className="dashboard-quick-icon"><CalendarDays /></div>
+                <div><strong>Agenda mensal</strong><span>Visualizar datas e disponibilidade.</span></div>
                 <ArrowRight className="row-arrow" />
               </Link>
-            )) : <div className="empty compact-empty">Nenhuma reserva futura cadastrada.</div>}
-          </div>
-        </section>
+              <Link href="/reservas/nova" className="dashboard-quick-link">
+                <div className="dashboard-quick-icon"><Plus /></div>
+                <div><strong>Nova reserva</strong><span>Cadastrar evento rapidamente.</span></div>
+                <ArrowRight className="row-arrow" />
+              </Link>
+              <Link href="/clientes" className="dashboard-quick-link">
+                <div className="dashboard-quick-icon"><UsersRound /></div>
+                <div><strong>Clientes</strong><span>Consultar contatos e histórico.</span></div>
+                <ArrowRight className="row-arrow" />
+              </Link>
+              <Link href="/financeiro" className="dashboard-quick-link">
+                <div className="dashboard-quick-icon"><CircleDollarSign /></div>
+                <div><strong>Financeiro</strong><span>Registrar sinal e acompanhar saldos.</span></div>
+                <ArrowRight className="row-arrow" />
+              </Link>
+            </div>
+          </section>
+        </div>
 
         <aside className="dashboard-side-stack">
           <section className="panel compact-panel">

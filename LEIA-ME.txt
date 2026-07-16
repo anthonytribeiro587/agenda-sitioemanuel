@@ -1,0 +1,16 @@
+Arquivos alterados nesta correção:
+
+1. app/(protected)/dashboard/page.tsx
+2. app/refinement.css
+3. components/AppShell.tsx
+
+Como aplicar:
+- Abra o repositório agenda-sitioemanuel.
+- Envie os arquivos mantendo exatamente essas pastas.
+- Quando o GitHub perguntar, substitua os arquivos existentes.
+- Faça o commit.
+
+O logo utilizado já existe no projeto em:
+public/sitio-emanuel-logo.svg
+
+Não é necessário enviar novamente node_modules, .next, package-lock.json ou outros arquivos.

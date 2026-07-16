@@ -66,17 +66,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className={`sidebar prototype-sidebar ${open ? "open" : ""}`}>
         <Link className="prototype-brand" href="/dashboard" onClick={() => setOpen(false)}>
           <Image
-            src="/sitio-emanuel-mark.png"
-            alt="Símbolo do Sítio Emanuel"
-            width={181}
-            height={76}
+            src="/sitio-emanuel-logo.svg"
+            alt="Sítio Emanuel"
+            width={190}
+            height={112}
             priority
             className="sitio-brand-logo"
           />
-          <div className="brand-copy">
-            <strong>Sítio Emanuel</strong>
-            <span>Agenda interna</span>
-          </div>
+          <span className="brand-caption">Agenda interna</span>
         </Link>
 
         <div className="nav-group-label">Menu principal</div>
