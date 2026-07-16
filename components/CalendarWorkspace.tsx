@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDays, format, nextFriday } from "date-fns";
 import {
   Ban,
@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Save,
   Trash2,
+  UserRoundSearch,
   WalletCards,
   X,
 } from "lucide-react";
@@ -37,6 +38,7 @@ function initialWeekend() {
 }
 
 const blankForm = {
+  customer_id: "",
   church_name: "",
   contact_name: "",
   phone: "",
@@ -54,6 +56,7 @@ const blankForm = {
 export function CalendarWorkspace() {
   const {
     reservations,
+    customers,
     blockedPeriods,
     createReservation,
     updateReservation,
@@ -78,14 +81,44 @@ export function CalendarWorkspace() {
   const selectedReservation = reservations.find((item) => item.id === selectedReservationId) ?? null;
   const selectedBlock = blockedPeriods.find((item) => item.id === selectedBlockId) ?? null;
 
+  useEffect(() => {
+    if (!modalOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setModalOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [modalOpen]);
+
   function updateForm<K extends keyof typeof blankForm>(key: K, value: (typeof blankForm)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function applyCustomer(customerId: string) {
+    const customer = customers.find((item) => item.id === customerId);
+    setForm((current) => customer ? {
+      ...current,
+      customer_id: customer.id,
+      church_name: customer.organization,
+      contact_name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+    } : { ...current, customer_id: "" });
+  }
+
   function openNewReservation() {
+    const next = initialWeekend();
+    setSelectedStart(next.start);
+    setSelectedEnd(next.end);
     setSelectedReservationId(null);
     setSelectedBlockId(null);
     setMode("reservation");
+    setForm(blankForm);
     setMessage("");
     setModalOpen(true);
   }
@@ -106,17 +139,23 @@ export function CalendarWorkspace() {
     const reservation = reservations.find((item) => item.id === selection.reservationId);
     setConfirmedTotal(reservation?.total_amount ? String(reservation.total_amount) : "");
     setPaymentAmount("");
+    if (!reservation && !selection.blockId) setForm(blankForm);
     setModalOpen(true);
   }
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (selectedEnd < selectedStart) {
+      setMessage("A data final não pode ser anterior à data inicial.");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
 
     try {
       const created = await createReservation({
-        customer_id: null,
+        customer_id: form.customer_id || null,
         church_name: form.church_name.trim(),
         contact_name: form.contact_name.trim(),
         phone: form.phone.trim(),
@@ -144,11 +183,12 @@ export function CalendarWorkspace() {
       setSelectedReservationId(created.id);
       setSelectedBlockId(null);
       setForm(blankForm);
+      setConfirmedTotal(created.total_amount ? String(created.total_amount) : "");
       setMessage("Reserva salva com sucesso.");
     } catch (error) {
       const text = error instanceof Error ? error.message : "Não foi possível salvar a reserva.";
       setMessage(
-        text.includes("overlap") || text.includes("conflict")
+        text.includes("overlap") || text.includes("conflict") || text.includes("CONFLICT")
           ? "Este período já possui uma reserva ou bloqueio."
           : text
       );
@@ -159,6 +199,10 @@ export function CalendarWorkspace() {
 
   async function block(event: React.FormEvent) {
     event.preventDefault();
+    if (selectedEnd < selectedStart) {
+      setMessage("A data final não pode ser anterior à data inicial.");
+      return;
+    }
     setSaving(true);
     setMessage("");
     try {
@@ -172,7 +216,8 @@ export function CalendarWorkspace() {
       setBlockReason("");
       setMessage("Período bloqueado.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível bloquear o período.");
+      const text = error instanceof Error ? error.message : "Não foi possível bloquear o período.";
+      setMessage(text.includes("CONFLICT") || text.includes("conflict") ? "Este período já possui uma reserva ou bloqueio." : text);
     } finally {
       setSaving(false);
     }
@@ -236,9 +281,10 @@ export function CalendarWorkspace() {
         <div className="prototype-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.currentTarget === event.target) setModalOpen(false);
         }}>
-          <section className="prototype-modal" role="dialog" aria-modal="true" aria-label="Gerenciar fim de semana">
+          <section className="prototype-modal" role="dialog" aria-modal="true" aria-label="Gerenciar reserva">
             <header className="prototype-modal-header">
               <div>
+                <span className="modal-kicker">{selectedReservation ? "Reserva cadastrada" : selectedBlock ? "Indisponibilidade" : "Agenda do sítio"}</span>
                 <h2>{selectedReservation ? selectedReservation.church_name : selectedBlock ? "Período bloqueado" : "Nova reserva"}</h2>
                 <p>{periodLabel}</p>
               </div>
@@ -287,7 +333,7 @@ export function CalendarWorkspace() {
                   <form className="mini-finance-form" onSubmit={saveFinancialUpdate}>
                     <div className="mini-section-title">
                       <WalletCards />
-                      <div><strong>Financeiro</strong><span>O valor final pode ser definido depois.</span></div>
+                      <div><strong>Financeiro</strong><span>Atualização rápida de valor e recebimento.</span></div>
                     </div>
                     <label className="field">
                       <span className="label">Valor total confirmado</span>
@@ -335,30 +381,39 @@ export function CalendarWorkspace() {
                     <button type="button" className={mode === "block" ? "active" : ""} onClick={() => setMode("block")}>Bloquear data</button>
                   </div>
 
+                  <div className="calendar-period-fields">
+                    <label className="field"><span className="label">Data inicial</span><input className="input" type="date" value={selectedStart} onChange={(event) => { setSelectedStart(event.target.value); if (selectedEnd < event.target.value) setSelectedEnd(event.target.value); }} required /></label>
+                    <label className="field"><span className="label">Data final</span><input className="input" type="date" min={selectedStart} value={selectedEnd} onChange={(event) => setSelectedEnd(event.target.value)} required /></label>
+                  </div>
+
                   {mode === "reservation" ? (
                     <form onSubmit={create} className="calendar-reservation-form">
                       <div className="form-intro">
-                        <strong>Quem está agendando?</strong>
-                        <span>Cadastre a pré-reserva e o sinal. O valor total pode ficar para depois.</span>
+                        <strong>Dados da pré-reserva</strong>
+                        <span>Use um cliente existente ou preencha um novo contato.</span>
                       </div>
                       <div className="form-grid compact-form-grid">
+                        <label className="field field-full customer-select-field"><span className="label"><UserRoundSearch /> Cliente cadastrado <em>opcional</em></span><select className="select" value={form.customer_id} onChange={(event) => applyCustomer(event.target.value)}><option value="">Preencher novo contato</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.organization} — {customer.name}</option>)}</select></label>
                         <label className="field field-full"><span className="label">Igreja / grupo</span><input className="input" value={form.church_name} onChange={(event) => updateForm("church_name", event.target.value)} required /></label>
                         <label className="field"><span className="label">Responsável</span><input className="input" value={form.contact_name} onChange={(event) => updateForm("contact_name", event.target.value)} required /></label>
                         <label className="field"><span className="label">WhatsApp</span><input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required /></label>
-                        <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
-                        <label className="field"><span className="label">Cardápio</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
+                        <label className="field"><span className="label">E-mail <em>opcional</em></span><input className="input" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} /></label>
+                        <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" max="500" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
+                        <label className="field"><span className="label">Cardápio / pacote</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
+                        <label className="field"><span className="label">Situação inicial</span><select className="select" value={form.status} onChange={(event) => updateForm("status", event.target.value as ReservationStatus)}><option value="PRE_RESERVA">Pré-reserva</option><option value="CONFIRMADA">Confirmada</option></select></label>
                         <label className="field"><span className="label">Valor do sinal</span><input className="input" type="number" min="0" step="0.01" placeholder="R$ 0,00" value={form.deposit_amount} onChange={(event) => updateForm("deposit_amount", event.target.value)} /></label>
                         <label className="field"><span className="label">Data do sinal</span><input className="input" type="date" value={form.payment_date} onChange={(event) => updateForm("payment_date", event.target.value)} /></label>
-                        <label className="field field-full"><span className="label">Valor total confirmado <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Preencher quando o valor final for definido" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
+                        <label className="field"><span className="label">Forma do sinal</span><select className="select" value={form.payment_method} onChange={(event) => updateForm("payment_method", event.target.value as PaymentMethod)}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="CARTAO">Cartão</option><option value="TRANSFERENCIA">Transferência</option><option value="OUTRO">Outro</option></select></label>
+                        <label className="field"><span className="label">Valor total <em>opcional</em></span><input className="input" type="number" min="0" step="0.01" placeholder="Pode ser definido depois" value={form.total_amount} onChange={(event) => updateForm("total_amount", event.target.value)} /></label>
                         <label className="field field-full"><span className="label">Observações</span><textarea className="textarea compact-textarea" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} placeholder="Horários, necessidades especiais e detalhes combinados..." /></label>
                       </div>
                       <button className="button button-primary button-wide" disabled={saving}>
-                        <Save /> {saving ? "Salvando..." : "Salvar pré-reserva"}
+                        <Save /> {saving ? "Salvando..." : form.status === "CONFIRMADA" ? "Salvar reserva" : "Salvar pré-reserva"}
                       </button>
                     </form>
                   ) : (
                     <form onSubmit={block} className="calendar-reservation-form">
-                      <div className="form-intro"><strong>Bloquear este fim de semana</strong><span>Use para manutenção, eventos internos ou indisponibilidade.</span></div>
+                      <div className="form-intro"><strong>Bloquear este período</strong><span>Use para manutenção, eventos internos ou indisponibilidade.</span></div>
                       <label className="field"><span className="label">Motivo</span><textarea className="textarea compact-textarea" value={blockReason} onChange={(event) => setBlockReason(event.target.value)} required /></label>
                       <button className="button button-primary button-wide" disabled={saving}><Ban /> Bloquear período</button>
                     </form>

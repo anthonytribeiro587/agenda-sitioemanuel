@@ -1,7 +1,6 @@
 /* Lote final: identidade oficial, calendário mobile-first e modais previsíveis. */
 
 .sitio-brand-logo {
-  content: url('/sitio-emanuel-logo.png');
   width: 174px;
   height: auto;
   max-height: 116px;

@@ -5,9 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
+  BarChart3,
   CalendarDays,
   CircleDollarSign,
   ContactRound,
+  LayoutDashboard,
   ListChecks,
   LogOut,
   Menu,
@@ -17,19 +19,23 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useAgenda } from "@/components/AgendaProvider";
 
 const links = [
+  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/agenda", label: "Calendário", icon: CalendarDays },
   { href: "/reservas", label: "Reservas", icon: ListChecks },
   { href: "/clientes", label: "Clientes", icon: ContactRound },
   { href: "/financeiro", label: "Financeiro", icon: CircleDollarSign },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 function titleFromPath(pathname: string) {
-  if (pathname.startsWith("/agenda") || pathname.startsWith("/dashboard")) return ["Calendário", "Agenda interna"];
+  if (pathname.startsWith("/dashboard")) return ["Visão geral", "Resumo da operação"];
+  if (pathname.startsWith("/agenda")) return ["Calendário", "Agenda interna"];
   if (pathname.startsWith("/reservas/")) return ["Detalhes da reserva", "Dados e pagamentos"];
   if (pathname.startsWith("/reservas")) return ["Reservas", "Histórico e busca"];
   if (pathname.startsWith("/clientes")) return ["Clientes", "Contatos atendidos"];
   if (pathname.startsWith("/financeiro")) return ["Financeiro", "Sinais e saldos"];
+  if (pathname.startsWith("/relatorios")) return ["Relatórios", "Indicadores e exportação"];
   if (pathname.startsWith("/configuracoes")) return ["Configurações", "Acessos e integrações"];
   return ["Agenda", "Gestão interna"];
 }
@@ -49,28 +55,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell prototype-shell">
-      {open ? <button className="mobile-overlay" onClick={() => setOpen(false)} aria-label="Fechar menu" /> : null}
+      {open ? (
+        <button
+          className="mobile-overlay"
+          onClick={() => setOpen(false)}
+          aria-label="Fechar menu"
+        />
+      ) : null}
 
       <aside className={`sidebar prototype-sidebar ${open ? "open" : ""}`}>
-        <div className="prototype-brand">
+        <Link className="prototype-brand" href="/dashboard" onClick={() => setOpen(false)}>
           <Image
-            src="/sitio-emanuel-logo.svg"
-            alt="Sítio Emanuel"
-            width={160}
-            height={94}
+            src="/sitio-emanuel-mark.png"
+            alt="Símbolo do Sítio Emanuel"
+            width={181}
+            height={76}
             priority
             className="sitio-brand-logo"
           />
-          <span className="brand-subtitle">Agenda interna</span>
-        </div>
+          <div className="brand-copy">
+            <strong>Sítio Emanuel</strong>
+            <span>Agenda interna</span>
+          </div>
+        </Link>
 
         <div className="nav-group-label">Menu principal</div>
         <nav className="nav-list">
           {links.map(({ href, label, icon: Icon }) => {
-            const active =
-              pathname === href ||
-              (href !== "/agenda" && pathname.startsWith(href)) ||
-              (href === "/agenda" && pathname.startsWith("/dashboard"));
+            const active = pathname === href || pathname.startsWith(`${href}/`);
 
             return (
               <Link
@@ -79,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setOpen(false)}
                 className={`nav-link ${active ? "active" : ""}`}
               >
-                <Icon />
+                <Icon aria-hidden="true" />
                 {label}
               </Link>
             );
@@ -87,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <button className="sidebar-logout" type="button" onClick={logout}>
-          <LogOut />
+          <LogOut aria-hidden="true" />
           Sair
         </button>
       </aside>
@@ -105,8 +117,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="topbar-actions">
-            {isDemo ? <span className="demo-chip">Demonstração</span> : <span className="connected-chip">Banco conectado</span>}
-            <button className="icon-button" onClick={logout} title="Sair">
+            {isDemo ? (
+              <span className="demo-chip">Demonstração</span>
+            ) : (
+              <span className="connected-chip">Banco conectado</span>
+            )}
+            <button className="icon-button" onClick={logout} title="Sair" aria-label="Sair">
               <LogOut size={17} />
             </button>
           </div>

@@ -25,14 +25,19 @@ type CalendarSelection = {
   blockId?: string;
 };
 
-function weekendFor(day: Date) {
+function suggestedRange(day: Date) {
   const dayOfWeek = day.getDay();
-  const friday = addDays(day, dayOfWeek === 0 ? -2 : dayOfWeek === 6 ? -1 : 5 - dayOfWeek);
+  const iso = format(day, "yyyy-MM-dd");
 
-  return {
-    start: format(friday, "yyyy-MM-dd"),
-    end: format(addDays(friday, 2), "yyyy-MM-dd"),
-  };
+  if ([0, 5, 6].includes(dayOfWeek)) {
+    const friday = addDays(day, dayOfWeek === 0 ? -2 : dayOfWeek === 6 ? -1 : 0);
+    return {
+      start: format(friday, "yyyy-MM-dd"),
+      end: format(addDays(friday, 2), "yyyy-MM-dd"),
+    };
+  }
+
+  return { start: iso, end: iso };
 }
 
 function overlapsDay(iso: string, start: string, end: string) {
@@ -179,7 +184,7 @@ export function MonthCalendar({
                         return;
                       }
 
-                      if (isWeekendDay) onSelect(weekendFor(day));
+                      onSelect(suggestedRange(day));
                     }}
                     aria-label={format(day, "dd 'de' MMMM", { locale: ptBR })}
                   >
@@ -212,7 +217,7 @@ export function MonthCalendar({
                       })
                     }
                   >
-                    <strong>{reservation.church_name}</strong>
+                    <strong title={reservation.church_name}>{reservation.church_name}</strong>
                     <span>{formatRange(reservation.start_date, reservation.end_date)}</span>
                   </button>
                 );

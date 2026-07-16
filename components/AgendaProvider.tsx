@@ -60,6 +60,14 @@ function randomId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+function rangesOverlap(startA: string, endA: string, startB: string, endB: string) {
+  return startA <= endB && endA >= startB;
+}
+
+function isBlockingStatus(status: Reservation["status"]) {
+  return status === "PRE_RESERVA" || status === "CONFIRMADA";
+}
+
 function normalizePayment(payment: Payment): Payment {
   return { ...payment, amount: Number(payment.amount ?? 0) };
 }
@@ -226,6 +234,15 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       let created: Reservation;
 
       if (isDemo || !supabase) {
+        const conflictsReservation = isBlockingStatus(input.status) && reservationsRef.current.some((reservation) =>
+          isBlockingStatus(reservation.status) &&
+          rangesOverlap(input.start_date, input.end_date, reservation.start_date, reservation.end_date)
+        );
+        const conflictsBlock = isBlockingStatus(input.status) && blockedPeriodsRef.current.some((period) =>
+          rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
+        );
+        if (conflictsReservation || conflictsBlock) throw new Error("RESERVATION_CONFLICT");
+
         created = normalizeReservation({
           ...input,
           id: randomId("reservation"),
@@ -268,9 +285,19 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       let updated: Reservation;
 
       if (isDemo || !supabase) {
+        const next = { ...current, ...input };
+        const conflictsReservation = isBlockingStatus(next.status) && reservationsRef.current.some((reservation) =>
+          reservation.id !== id &&
+          isBlockingStatus(reservation.status) &&
+          rangesOverlap(next.start_date, next.end_date, reservation.start_date, reservation.end_date)
+        );
+        const conflictsBlock = isBlockingStatus(next.status) && blockedPeriodsRef.current.some((period) =>
+          rangesOverlap(next.start_date, next.end_date, period.start_date, period.end_date)
+        );
+        if (conflictsReservation || conflictsBlock) throw new Error("RESERVATION_CONFLICT");
+
         updated = normalizeReservation({
-          ...current,
-          ...input,
+          ...next,
           updated_at: new Date().toISOString(),
         });
       } else {
@@ -458,6 +485,15 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       let created: BlockedPeriod;
 
       if (isDemo || !supabase) {
+        const conflictsReservation = reservationsRef.current.some((reservation) =>
+          isBlockingStatus(reservation.status) &&
+          rangesOverlap(input.start_date, input.end_date, reservation.start_date, reservation.end_date)
+        );
+        const conflictsBlock = blockedPeriodsRef.current.some((period) =>
+          rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
+        );
+        if (conflictsReservation || conflictsBlock) throw new Error("BLOCK_CONFLICT");
+
         created = {
           ...input,
           id: randomId("block"),

@@ -5,6 +5,7 @@ import "./polish.css";
 import "./workflow-detail.css";
 import "./workflow-management.css";
 import "./final-mobile.css";
+import "./refinement.css";
 
 export const metadata: Metadata = {
   title: "Agenda Sítio Emanuel",

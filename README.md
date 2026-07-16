@@ -1,31 +1,34 @@
 # Agenda Sítio Emanuel
 
-Sistema interno para substituir o calendário e o caderno usados no controle de reservas do Sítio Emanuel.
+Sistema interno para organizar reservas, clientes, pagamentos e disponibilidade do Sítio Emanuel.
 
 ## Fluxo principal
 
-- a agenda mensal é a tela inicial;
-- sextas, sábados e domingos ficam destacados;
-- ao selecionar um fim de semana livre, o formulário de pré-reserva abre ao lado;
-- ao selecionar um período ocupado, aparecem contato, pessoas, cardápio, pagamentos e ações;
+- a visão geral apresenta próximas reservas, pendências financeiras e datas bloqueadas;
+- o calendário mensal destaca os fins de semana e mostra cada reserva por situação;
+- ao clicar em qualquer data livre, o sistema sugere o período e abre o cadastro;
+- o cadastro pode reutilizar um cliente existente ou receber um novo contato;
 - a pré-reserva pode começar apenas com o sinal;
-- o valor total confirmado pode ser preenchido depois da negociação;
+- o valor total pode ser preenchido depois da negociação;
 - pagamentos posteriores atualizam o saldo automaticamente;
-- períodos também podem ser bloqueados para manutenção ou uso interno.
+- períodos podem ser bloqueados para manutenção ou uso interno;
+- relatórios podem ser filtrados e exportados em CSV.
 
 ## Funcionalidades
 
 - login privado com Supabase Auth;
 - criação automática do perfil administrativo do primeiro usuário autenticado;
+- dashboard compacto com indicadores operacionais;
 - calendário mensal começando na segunda-feira;
-- pré-reservas e reservas confirmadas dentro dos próprios dias;
-- cadastro de responsáveis, igrejas e clientes;
+- pré-reservas, reservas confirmadas, realizadas e períodos bloqueados;
+- cadastro e reutilização de responsáveis, igrejas e clientes;
 - registro de sinal e demais pagamentos;
 - valor total opcional até a negociação ser concluída;
-- financeiro sem criar saldo artificial para reservas ainda sem total definido;
-- bloqueio de períodos;
-- RLS, auditoria e prevenção de conflito de datas;
-- estrutura preparada para integração futura com Google Agenda.
+- financeiro sem criar saldo artificial para reservas sem total definido;
+- detalhes da reserva com resumo, financeiro, edição, histórico e impressão em PDF;
+- relatórios por período e situação, com exportação CSV;
+- prevenção de conflito de datas no Supabase e também no modo demonstração;
+- RLS, auditoria e estrutura preparada para integração futura com Google Agenda.
 
 ## Executar localmente
 

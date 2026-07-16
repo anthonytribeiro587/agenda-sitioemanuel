@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -10,6 +12,7 @@ import {
   Edit3,
   History,
   MessageCircle,
+  Printer,
   Save,
   Trash2,
   UserRound,
@@ -299,12 +302,16 @@ export default function ReservationDetailsPage() {
     <main className="page reservation-detail-page modern-detail-page">
       <header className="modern-detail-header">
         <div className="modern-detail-title">
-          <StatusBadge status={currentReservation.status} />
+          <Link href="/reservas" className="detail-back-link"><ArrowLeft /> Voltar para reservas</Link>
+          <div className="detail-title-status"><StatusBadge status={currentReservation.status} /></div>
           <h1>{currentReservation.church_name}</h1>
           <p>{formatRange(currentReservation.start_date, currentReservation.end_date)} • {currentReservation.contact_name}</p>
         </div>
 
         <div className="modern-detail-actions">
+          <button className="button button-secondary" type="button" onClick={() => window.print()}>
+            <Printer /> Imprimir / PDF
+          </button>
           <a className="button button-secondary" href={whatsappUrl(currentReservation)} target="_blank" rel="noreferrer">
             <MessageCircle /> WhatsApp
           </a>
