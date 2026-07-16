@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { addDays, format, nextFriday } from "date-fns";
 import {
   Ban,
@@ -277,7 +278,7 @@ export function CalendarWorkspace() {
         onNewReservation={openNewReservation}
       />
 
-      {modalOpen ? (
+      {modalOpen && typeof document !== "undefined" ? createPortal(
         <div className="prototype-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.currentTarget === event.target) setModalOpen(false);
         }}>
@@ -422,7 +423,8 @@ export function CalendarWorkspace() {
               )}
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </>
   );
