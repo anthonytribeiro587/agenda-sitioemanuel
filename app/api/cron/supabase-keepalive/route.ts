@@ -1,31 +1,37 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { noStoreJson } from "@/lib/security/http";
 
 export const dynamic = "force-dynamic";
+
+function validBearer(value: string | null, expected: string) {
+  if (!value?.startsWith("Bearer ")) return false;
+  const received = Buffer.from(value.slice(7));
+  const secret = Buffer.from(expected);
+  return received.length === secret.length && timingSafeEqual(received, secret);
+}
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
 
-  if (!secret || authorization !== `Bearer ${secret}`) {
-    return NextResponse.json({ ok: false }, { status: 401 });
+  if (!secret || secret.length < 32 || !validBearer(authorization, secret)) {
+    return noStoreJson({ ok: false }, { status: 401 });
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRole) {
-    return NextResponse.json({ ok: false, error: "Supabase não configurado." }, { status: 503 });
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return noStoreJson({ ok: false }, { status: 503 });
   }
 
-  const supabase = createClient(url, serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { error } = await supabase.from("profiles").select("id", { head: true, count: "exact" });
+  const { error } = await supabase
+    .from("profiles")
+    .select("id", { head: true, count: "exact" });
 
   if (error) {
-    console.error("Supabase keepalive failed:", error.message);
-    return NextResponse.json({ ok: false }, { status: 500 });
+    console.error("Supabase keepalive failed", { code: error.code });
+    return noStoreJson({ ok: false }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, checkedAt: new Date().toISOString() });
+  return noStoreJson({ ok: true });
 }

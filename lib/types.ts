@@ -5,6 +5,7 @@ export type ReservationStatus =
   | "CANCELADA";
 
 export type PaymentMethod = "PIX" | "DINHEIRO" | "CARTAO" | "TRANSFERENCIA" | "OUTRO";
+export type ProfileRole = "ADMIN" | "GESTOR" | "FINANCEIRO" | "LEITURA";
 
 export type Customer = {
   id: string;
@@ -14,6 +15,7 @@ export type Customer = {
   email: string;
   notes: string;
   created_at: string;
+  updated_at?: string;
 };
 
 export type Payment = {
@@ -24,6 +26,10 @@ export type Payment = {
   method: PaymentMethod;
   notes: string;
   created_at: string;
+  request_key?: string;
+  voided_at?: string | null;
+  void_reason?: string | null;
+  voided_by?: string | null;
 };
 
 export type Reservation = {
@@ -43,6 +49,9 @@ export type Reservation = {
   notes: string;
   created_at: string;
   updated_at: string;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  cancelled_by?: string | null;
   customer?: Customer | null;
   payments?: Payment[];
 };
@@ -57,9 +66,23 @@ export type BlockedPeriod = {
 
 export type ReservationInput = Omit<
   Reservation,
-  "id" | "created_at" | "updated_at" | "payments" | "customer"
+  | "id"
+  | "created_at"
+  | "updated_at"
+  | "payments"
+  | "customer"
+  | "cancelled_at"
+  | "cancel_reason"
+  | "cancelled_by"
 >;
 
-export type CustomerInput = Omit<Customer, "id" | "created_at">;
-export type PaymentInput = Omit<Payment, "id" | "created_at">;
+export type CustomerInput = Omit<Customer, "id" | "created_at" | "updated_at">;
+export type PaymentInput = Omit<
+  Payment,
+  "id" | "created_at" | "request_key" | "voided_at" | "void_reason" | "voided_by"
+>;
 export type BlockedPeriodInput = Omit<BlockedPeriod, "id" | "created_at">;
+
+export type MutationOptions = {
+  reason?: string;
+};

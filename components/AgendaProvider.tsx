@@ -16,14 +16,27 @@ import {
   demoPayments,
   demoReservations,
 } from "@/lib/demo-data";
-import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
+import {
+  createSupabaseBrowserClient,
+  isDemoModeEnabled,
+  isSupabaseConfigured,
+} from "@/lib/supabase/browser";
+import {
+  parseBlockedPeriodInput,
+  parseCustomerInput,
+  parsePaymentInput,
+  parseReservationInput,
+  validationMessage,
+} from "@/lib/validation";
 import type {
   BlockedPeriod,
   BlockedPeriodInput,
   Customer,
   CustomerInput,
+  MutationOptions,
   Payment,
   PaymentInput,
+  ProfileRole,
   Reservation,
   ReservationInput,
 } from "@/lib/types";
@@ -31,29 +44,54 @@ import type {
 type AgendaContextValue = {
   loading: boolean;
   isDemo: boolean;
+  role: ProfileRole | null;
   reservations: Reservation[];
   customers: Customer[];
   blockedPeriods: BlockedPeriod[];
   refresh: () => Promise<void>;
   createReservation: (input: ReservationInput) => Promise<Reservation>;
-  updateReservation: (id: string, input: Partial<ReservationInput>) => Promise<void>;
-  deleteReservation: (id: string) => Promise<void>;
+  updateReservation: (
+    id: string,
+    input: Partial<ReservationInput>,
+    options?: MutationOptions
+  ) => Promise<void>;
+  deleteReservation: (id: string, reason?: string) => Promise<void>;
   createCustomer: (input: CustomerInput) => Promise<Customer>;
   updateCustomer: (id: string, input: CustomerInput) => Promise<void>;
-  deleteCustomer: (id: string) => Promise<void>;
+  deleteCustomer: (id: string, reason?: string) => Promise<void>;
   addPayment: (input: PaymentInput) => Promise<Payment>;
-  deletePayment: (id: string, reservationId: string) => Promise<void>;
+  deletePayment: (id: string, reservationId: string, reason?: string) => Promise<void>;
   addBlockedPeriod: (input: BlockedPeriodInput) => Promise<BlockedPeriod>;
-  removeBlockedPeriod: (id: string) => Promise<void>;
+  removeBlockedPeriod: (id: string, reason?: string) => Promise<void>;
 };
 
 const AgendaContext = createContext<AgendaContextValue | null>(null);
 const STORAGE_KEY = "agenda-sitio-emanuel-demo-v3";
 
+const RESERVATION_DETAIL_KEYS = new Set<keyof ReservationInput>([
+  "customer_id",
+  "church_name",
+  "contact_name",
+  "phone",
+  "email",
+  "start_date",
+  "end_date",
+  "guests_estimated",
+  "guests_confirmed",
+  "package_name",
+  "notes",
+]);
+
 type StoredDemo = {
   reservations: Reservation[];
   customers: Customer[];
   blockedPeriods: BlockedPeriod[];
+};
+
+type BootstrapResponse = {
+  ok?: boolean;
+  role?: ProfileRole;
+  error?: string;
 };
 
 function randomId(prefix: string) {
@@ -81,7 +119,7 @@ function normalizeReservation(reservation: Reservation): Reservation {
       reservation.guests_confirmed === null || reservation.guests_confirmed === undefined
         ? null
         : Number(reservation.guests_confirmed),
-    payments: (reservation.payments ?? []).map(normalizePayment),
+    payments: (reservation.payments ?? []).filter((payment) => !payment.voided_at).map(normalizePayment),
   };
 }
 
@@ -93,12 +131,14 @@ function hydrateReservations(
   const customerById = new Map(customers.map((customer) => [customer.id, customer]));
   const paymentsByReservation = new Map<string, Payment[]>();
 
-  payments.forEach((payment) => {
-    const normalized = normalizePayment(payment);
-    const current = paymentsByReservation.get(payment.reservation_id) ?? [];
-    current.push(normalized);
-    paymentsByReservation.set(payment.reservation_id, current);
-  });
+  payments
+    .filter((payment) => !payment.voided_at)
+    .forEach((payment) => {
+      const normalized = normalizePayment(payment);
+      const current = paymentsByReservation.get(payment.reservation_id) ?? [];
+      current.push(normalized);
+      paymentsByReservation.set(payment.reservation_id, current);
+    });
 
   return reservations.map((reservation) =>
     normalizeReservation({
@@ -119,17 +159,71 @@ function initialDemo(): StoredDemo {
   };
 }
 
-async function readJsonMessage(response: Response) {
+function reservationInputFromRow(reservation: Reservation): ReservationInput {
+  return {
+    customer_id: reservation.customer_id,
+    church_name: reservation.church_name,
+    contact_name: reservation.contact_name,
+    phone: reservation.phone,
+    email: reservation.email,
+    start_date: reservation.start_date,
+    end_date: reservation.end_date,
+    guests_estimated: reservation.guests_estimated,
+    guests_confirmed: reservation.guests_confirmed,
+    package_name: reservation.package_name,
+    total_amount: reservation.total_amount,
+    status: reservation.status,
+    notes: reservation.notes,
+  };
+}
+
+function rpcRow<T>(data: T | T[] | null): T {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("A operação não retornou os dados esperados.");
+  return row;
+}
+
+function databaseMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const messages: Array<[string, string]> = [
+    ["CUSTOMER_WRITE_FORBIDDEN", "Seu perfil não pode alterar clientes."],
+    ["RESERVATION_WRITE_FORBIDDEN", "Seu perfil não pode alterar reservas."],
+    ["FINANCE_ROLE_REQUIRED", "Apenas o administrador ou o financeiro pode alterar valores."],
+    ["ADMIN_REQUIRED", "Esta ação exige perfil de administrador."],
+    ["STALE_RESERVATION", "A reserva foi alterada em outra tela. Atualize a página antes de salvar."],
+    ["RESERVATION_CONFLICTS_WITH_BLOCK", "O período está bloqueado."],
+    ["reservations_no_active_overlap", "O período entra em conflito com outra reserva."],
+    ["blocked_periods_no_overlap", "Já existe um bloqueio nesse período."],
+    ["TOTAL_BELOW_RECEIVED", "O valor combinado não pode ser menor que o total recebido."],
+    ["PAYMENT_EXCEEDS_BALANCE", "O pagamento excede o saldo atual da reserva."],
+    ["RESERVATION_TOTAL_REQUIRED", "Defina o valor combinado antes de registrar pagamentos."],
+    ["CANCEL_REASON_REQUIRED", "Informe um motivo com pelo menos 5 caracteres."],
+    ["VOID_REASON_REQUIRED", "Informe o motivo da anulação do pagamento."],
+    ["ADMIN_REQUIRED_FOR_OLD_PAYMENT_VOID", "Somente o administrador pode anular pagamentos antigos."],
+    ["PAYMENT_DELETE_FORBIDDEN", "Pagamentos não podem ser apagados; somente anulados com motivo."],
+    ["RESERVATION_DELETE_WINDOW_CLOSED", "Após 24 horas, a reserva deve ser cancelada e não excluída."],
+    ["RESERVATION_HAS_FINANCIAL_HISTORY", "Reservas com histórico financeiro não podem ser excluídas."],
+    ["CUSTOMER_HAS_RESERVATIONS", "Este cliente possui reservas e não pode ser excluído."],
+    ["INVALID_STATUS_TRANSITION", "Essa mudança de situação não é permitida."],
+    ["RESERVATION_DATE_OUT_OF_RANGE", "A data informada está fora do período permitido."],
+    ["PAYMENT_DATE_OUT_OF_RANGE", "A data do pagamento é inválida ou está no futuro."],
+  ];
+
+  const translated = messages.find(([token]) => raw.includes(token));
+  return translated?.[1] ?? "A operação foi bloqueada pelas regras de segurança.";
+}
+
+async function readBootstrap(response: Response): Promise<BootstrapResponse> {
   try {
-    const body = (await response.json()) as { error?: string };
-    return body.error ?? "Não foi possível autorizar este usuário.";
+    return (await response.json()) as BootstrapResponse;
   } catch {
-    return "Não foi possível autorizar este usuário.";
+    return { error: "Não foi possível autorizar este usuário." };
   }
 }
 
 export function AgendaProvider({ children }: { children: ReactNode }) {
-  const isDemo = !isSupabaseConfigured();
+  const configured = isSupabaseConfigured();
+  const isDemo = !configured && isDemoModeEnabled();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const profileReady = useRef(false);
   const loaded = useRef(false);
@@ -137,6 +231,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   const customersRef = useRef<Customer[]>([]);
   const blockedPeriodsRef = useRef<BlockedPeriod[]>([]);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<ProfileRole | null>(isDemo ? "ADMIN" : null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [blockedPeriods, setBlockedPeriods] = useState<BlockedPeriod[]>([]);
@@ -159,17 +254,26 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
 
   const ensureProfile = useCallback(async () => {
     if (isDemo || profileReady.current) return;
-    const response = await fetch("/api/profile/bootstrap", { method: "POST" });
-    if (!response.ok) throw new Error(await readJsonMessage(response));
+    if (!configured) throw new Error("O sistema está sem configuração de banco e foi bloqueado.");
+
+    const response = await fetch("/api/profile/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    const body = await readBootstrap(response);
+    if (!response.ok) throw new Error(body.error ?? "Não foi possível autorizar este usuário.");
+
+    setRole(body.role ?? null);
     profileReady.current = true;
-  }, [isDemo]);
+  }, [configured, isDemo]);
 
   const refresh = useCallback(async () => {
     const isInitialLoad = !loaded.current;
     if (isInitialLoad) setLoading(true);
 
     try {
-      if (isDemo || !supabase) {
+      if (isDemo) {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           try {
@@ -183,18 +287,26 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (!configured || !supabase) {
+        throw new Error("O sistema está sem configuração de banco e foi bloqueado.");
+      }
+
       await ensureProfile();
 
       const [reservationResult, customerResult, paymentResult, blockResult] = await Promise.all([
         supabase.from("reservations").select("*").order("start_date"),
         supabase.from("customers").select("*").order("name"),
-        supabase.from("payments").select("*").order("payment_date", { ascending: false }),
+        supabase
+          .from("payments")
+          .select("*")
+          .is("voided_at", null)
+          .order("payment_date", { ascending: false }),
         supabase.from("blocked_periods").select("*").order("start_date"),
       ]);
 
       const error =
         reservationResult.error || customerResult.error || paymentResult.error || blockResult.error;
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(databaseMessage(error));
 
       const fetchedCustomers = (customerResult.data ?? []) as Customer[];
       const fetchedPayments = (paymentResult.data ?? []) as Payment[];
@@ -214,12 +326,12 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       loaded.current = true;
       setLoading(false);
     }
-  }, [applySnapshot, ensureProfile, isDemo, supabase]);
+  }, [applySnapshot, configured, ensureProfile, isDemo, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       refresh().catch((error) => {
-        console.error(error);
+        console.error("agenda refresh failed", error);
         loaded.current = true;
         setLoading(false);
       });
@@ -229,18 +341,35 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const createReservation = useCallback(
-    async (input: ReservationInput) => {
+    async (rawInput: ReservationInput) => {
+      let input: ReservationInput;
+      try {
+        input = parseReservationInput(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+
       const now = new Date().toISOString();
       let created: Reservation;
 
-      if (isDemo || !supabase) {
-        const conflictsReservation = isBlockingStatus(input.status) && reservationsRef.current.some((reservation) =>
-          isBlockingStatus(reservation.status) &&
-          rangesOverlap(input.start_date, input.end_date, reservation.start_date, reservation.end_date)
-        );
-        const conflictsBlock = isBlockingStatus(input.status) && blockedPeriodsRef.current.some((period) =>
-          rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
-        );
+      if (isDemo) {
+        const conflictsReservation =
+          isBlockingStatus(input.status) &&
+          reservationsRef.current.some(
+            (reservation) =>
+              isBlockingStatus(reservation.status) &&
+              rangesOverlap(
+                input.start_date,
+                input.end_date,
+                reservation.start_date,
+                reservation.end_date
+              )
+          );
+        const conflictsBlock =
+          isBlockingStatus(input.status) &&
+          blockedPeriodsRef.current.some((period) =>
+            rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
+          );
         if (conflictsReservation || conflictsBlock) throw new Error("RESERVATION_CONFLICT");
 
         created = normalizeReservation({
@@ -254,13 +383,30 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           payments: [],
         });
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase.from("reservations").insert(input).select("*").single();
-        if (error) throw new Error(error.message);
+        const { data, error } = await supabase.rpc("create_reservation_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_customer_id: input.customer_id,
+          p_church_name: input.church_name,
+          p_contact_name: input.contact_name,
+          p_phone: input.phone,
+          p_email: input.email,
+          p_start_date: input.start_date,
+          p_end_date: input.end_date,
+          p_guests_estimated: input.guests_estimated,
+          p_guests_confirmed: input.guests_confirmed,
+          p_package_name: input.package_name,
+          p_total_amount: input.total_amount,
+          p_status: input.status,
+          p_notes: input.notes,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        const row = rpcRow(data as Reservation | Reservation[] | null);
         created = normalizeReservation({
-          ...(data as Reservation),
-          customer: input.customer_id
-            ? customersRef.current.find((customer) => customer.id === input.customer_id) ?? null
+          ...row,
+          customer: row.customer_id
+            ? customersRef.current.find((customer) => customer.id === row.customer_id) ?? null
             : null,
           payments: [],
         });
@@ -279,37 +425,106 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const updateReservation = useCallback(
-    async (id: string, input: Partial<ReservationInput>) => {
+    async (
+      id: string,
+      input: Partial<ReservationInput>,
+      options: MutationOptions = {}
+    ) => {
       const current = reservationsRef.current.find((reservation) => reservation.id === id);
       if (!current) throw new Error("Reserva não encontrada.");
+
+      let merged: ReservationInput;
+      try {
+        merged = parseReservationInput({ ...reservationInputFromRow(current), ...input });
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+
       let updated: Reservation;
 
-      if (isDemo || !supabase) {
-        const next = { ...current, ...input };
-        const conflictsReservation = isBlockingStatus(next.status) && reservationsRef.current.some((reservation) =>
-          reservation.id !== id &&
-          isBlockingStatus(reservation.status) &&
-          rangesOverlap(next.start_date, next.end_date, reservation.start_date, reservation.end_date)
-        );
-        const conflictsBlock = isBlockingStatus(next.status) && blockedPeriodsRef.current.some((period) =>
-          rangesOverlap(next.start_date, next.end_date, period.start_date, period.end_date)
-        );
+      if (isDemo) {
+        const conflictsReservation =
+          isBlockingStatus(merged.status) &&
+          reservationsRef.current.some(
+            (reservation) =>
+              reservation.id !== id &&
+              isBlockingStatus(reservation.status) &&
+              rangesOverlap(
+                merged.start_date,
+                merged.end_date,
+                reservation.start_date,
+                reservation.end_date
+              )
+          );
+        const conflictsBlock =
+          isBlockingStatus(merged.status) &&
+          blockedPeriodsRef.current.some((period) =>
+            rangesOverlap(merged.start_date, merged.end_date, period.start_date, period.end_date)
+          );
         if (conflictsReservation || conflictsBlock) throw new Error("RESERVATION_CONFLICT");
 
         updated = normalizeReservation({
-          ...next,
+          ...current,
+          ...merged,
           updated_at: new Date().toISOString(),
         });
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase
-          .from("reservations")
-          .update(input)
-          .eq("id", id)
-          .select("*")
-          .single();
-        if (error) throw new Error(error.message);
-        const row = data as Reservation;
+        let row = current;
+        const requestId = crypto.randomUUID();
+        const hasDetailChanges = Object.keys(input).some((key) =>
+          RESERVATION_DETAIL_KEYS.has(key as keyof ReservationInput)
+        );
+
+        if (hasDetailChanges) {
+          const { data, error } = await supabase.rpc("update_reservation_details_secure", {
+            p_request_id: requestId,
+            p_id: id,
+            p_expected_updated_at: row.updated_at,
+            p_customer_id: merged.customer_id,
+            p_church_name: merged.church_name,
+            p_contact_name: merged.contact_name,
+            p_phone: merged.phone,
+            p_email: merged.email,
+            p_start_date: merged.start_date,
+            p_end_date: merged.end_date,
+            p_guests_estimated: merged.guests_estimated,
+            p_guests_confirmed: merged.guests_confirmed,
+            p_package_name: merged.package_name,
+            p_notes: merged.notes,
+          });
+          if (error) throw new Error(databaseMessage(error));
+          row = rpcRow(data as Reservation | Reservation[] | null);
+        }
+
+        if (input.total_amount !== undefined && merged.total_amount !== Number(row.total_amount)) {
+          const { data, error } = await supabase.rpc("set_reservation_total_secure", {
+            p_request_id: requestId,
+            p_id: id,
+            p_expected_updated_at: row.updated_at,
+            p_total_amount: merged.total_amount,
+            p_reason: options.reason ?? "Atualização do valor combinado pela interface",
+          });
+          if (error) throw new Error(databaseMessage(error));
+          row = rpcRow(data as Reservation | Reservation[] | null);
+        }
+
+        if (input.status !== undefined && merged.status !== row.status) {
+          const { data, error } = await supabase.rpc("change_reservation_status_secure", {
+            p_request_id: requestId,
+            p_id: id,
+            p_expected_updated_at: row.updated_at,
+            p_status: merged.status,
+            p_reason:
+              merged.status === "CANCELADA"
+                ? options.reason ?? "Cancelamento administrativo pela interface"
+                : options.reason ?? null,
+          });
+          if (error) throw new Error(databaseMessage(error));
+          row = rpcRow(data as Reservation | Reservation[] | null);
+        }
+
         updated = normalizeReservation({
           ...current,
           ...row,
@@ -332,11 +547,16 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteReservation = useCallback(
-    async (id: string) => {
-      if (!isDemo && supabase) {
+    async (id: string, reason = "Exclusão administrativa de cadastro duplicado") => {
+      if (!isDemo) {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { error } = await supabase.from("reservations").delete().eq("id", id);
-        if (error) throw new Error(error.message);
+        const { error } = await supabase.rpc("delete_reservation_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_reason: reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
       }
 
       applySnapshot({
@@ -349,16 +569,30 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const createCustomer = useCallback(
-    async (input: CustomerInput) => {
-      let created: Customer;
+    async (rawInput: CustomerInput) => {
+      let input: CustomerInput;
+      try {
+        input = parseCustomerInput(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
 
-      if (isDemo || !supabase) {
+      let created: Customer;
+      if (isDemo) {
         created = { ...input, id: randomId("customer"), created_at: new Date().toISOString() };
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase.from("customers").insert(input).select("*").single();
-        if (error) throw new Error(error.message);
-        created = data as Customer;
+        const { data, error } = await supabase.rpc("create_customer_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_name: input.name,
+          p_organization: input.organization,
+          p_phone: input.phone,
+          p_email: input.email,
+          p_notes: input.notes,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        created = rpcRow(data as Customer | Customer[] | null);
       }
 
       applySnapshot({
@@ -372,23 +606,33 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const updateCustomer = useCallback(
-    async (id: string, input: CustomerInput) => {
-      let updated: Customer;
+    async (id: string, rawInput: CustomerInput) => {
+      let input: CustomerInput;
+      try {
+        input = parseCustomerInput(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
 
-      if (isDemo || !supabase) {
+      let updated: Customer;
+      if (isDemo) {
         const current = customersRef.current.find((customer) => customer.id === id);
         if (!current) throw new Error("Cliente não encontrado.");
         updated = { ...current, ...input };
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase
-          .from("customers")
-          .update(input)
-          .eq("id", id)
-          .select("*")
-          .single();
-        if (error) throw new Error(error.message);
-        updated = data as Customer;
+        const { data, error } = await supabase.rpc("update_customer_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_name: input.name,
+          p_organization: input.organization,
+          p_phone: input.phone,
+          p_email: input.email,
+          p_notes: input.notes,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        updated = rpcRow(data as Customer | Customer[] | null);
       }
 
       applySnapshot({
@@ -405,11 +649,16 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteCustomer = useCallback(
-    async (id: string) => {
-      if (!isDemo && supabase) {
+    async (id: string, reason = "Exclusão administrativa de cadastro sem reservas") => {
+      if (!isDemo) {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { error } = await supabase.from("customers").delete().eq("id", id);
-        if (error) throw new Error(error.message);
+        const { error } = await supabase.rpc("delete_customer_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_reason: reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
       }
 
       applySnapshot({
@@ -426,20 +675,35 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const addPayment = useCallback(
-    async (input: PaymentInput) => {
-      let created: Payment;
+    async (rawInput: PaymentInput) => {
+      let input: PaymentInput;
+      try {
+        input = parsePaymentInput(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
 
-      if (isDemo || !supabase) {
+      let created: Payment;
+      if (isDemo) {
         created = normalizePayment({
           ...input,
           id: randomId("payment"),
           created_at: new Date().toISOString(),
         });
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase.from("payments").insert(input).select("*").single();
-        if (error) throw new Error(error.message);
-        created = normalizePayment(data as Payment);
+        const requestKey = crypto.randomUUID();
+        const { data, error } = await supabase.rpc("record_payment_secure", {
+          p_request_key: requestKey,
+          p_reservation_id: input.reservation_id,
+          p_amount: input.amount,
+          p_payment_date: input.payment_date,
+          p_method: input.method,
+          p_notes: input.notes,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        created = normalizePayment(rpcRow(data as Payment | Payment[] | null));
       }
 
       applySnapshot({
@@ -457,11 +721,20 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const deletePayment = useCallback(
-    async (id: string, reservationId: string) => {
-      if (!isDemo && supabase) {
+    async (
+      id: string,
+      reservationId: string,
+      reason = "Anulação de lançamento informada pela interface"
+    ) => {
+      if (!isDemo) {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { error } = await supabase.from("payments").delete().eq("id", id);
-        if (error) throw new Error(error.message);
+        const { error } = await supabase.rpc("void_payment_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_payment_id: id,
+          p_reason: reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
       }
 
       applySnapshot({
@@ -481,13 +754,25 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const addBlockedPeriod = useCallback(
-    async (input: BlockedPeriodInput) => {
-      let created: BlockedPeriod;
+    async (rawInput: BlockedPeriodInput) => {
+      let input: BlockedPeriodInput;
+      try {
+        input = parseBlockedPeriodInput(rawInput);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
 
-      if (isDemo || !supabase) {
-        const conflictsReservation = reservationsRef.current.some((reservation) =>
-          isBlockingStatus(reservation.status) &&
-          rangesOverlap(input.start_date, input.end_date, reservation.start_date, reservation.end_date)
+      let created: BlockedPeriod;
+      if (isDemo) {
+        const conflictsReservation = reservationsRef.current.some(
+          (reservation) =>
+            isBlockingStatus(reservation.status) &&
+            rangesOverlap(
+              input.start_date,
+              input.end_date,
+              reservation.start_date,
+              reservation.end_date
+            )
         );
         const conflictsBlock = blockedPeriodsRef.current.some((period) =>
           rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
@@ -500,14 +785,16 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           created_at: new Date().toISOString(),
         };
       } else {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { data, error } = await supabase
-          .from("blocked_periods")
-          .insert(input)
-          .select("*")
-          .single();
-        if (error) throw new Error(error.message);
-        created = data as BlockedPeriod;
+        const { data, error } = await supabase.rpc("create_blocked_period_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_start_date: input.start_date,
+          p_end_date: input.end_date,
+          p_reason: input.reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        created = rpcRow(data as BlockedPeriod | BlockedPeriod[] | null);
       }
 
       applySnapshot({
@@ -523,11 +810,16 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
   );
 
   const removeBlockedPeriod = useCallback(
-    async (id: string) => {
-      if (!isDemo && supabase) {
+    async (id: string, reason = "Remoção administrativa de bloqueio") => {
+      if (!isDemo) {
+        if (!supabase) throw new Error("Banco indisponível.");
         await ensureProfile();
-        const { error } = await supabase.from("blocked_periods").delete().eq("id", id);
-        if (error) throw new Error(error.message);
+        const { error } = await supabase.rpc("delete_blocked_period_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_reason: reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
       }
 
       applySnapshot({
@@ -543,6 +835,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     () => ({
       loading,
       isDemo,
+      role,
       reservations,
       customers,
       blockedPeriods,
@@ -573,6 +866,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       refresh,
       removeBlockedPeriod,
       reservations,
+      role,
       updateCustomer,
       updateReservation,
     ]

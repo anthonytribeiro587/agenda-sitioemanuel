@@ -17,7 +17,7 @@ Sistema interno para organizar reservas, clientes, pagamentos e disponibilidade 
 ## Funcionalidades
 
 - login privado com Supabase Auth;
-- criação automática do perfil administrativo do primeiro usuário autenticado;
+- bootstrap controlado do primeiro administrador por e-mail previamente autorizado;
 - dashboard compacto com indicadores operacionais;
 - calendário mensal começando na segunda-feira;
 - pré-reservas, reservas confirmadas, realizadas e períodos bloqueados;
@@ -38,13 +38,15 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Sem as variáveis do Supabase, o sistema utiliza o modo demonstração e salva os dados no navegador.
+O modo demonstração só funciona fora de produção e quando `NEXT_PUBLIC_ENABLE_DEMO_MODE=true`. Em produção, a ausência do Supabase bloqueia o sistema em vez de abrir dados locais.
 
 ## Configurar o Supabase
 
 1. Crie um projeto no Supabase.
-2. Execute `supabase/migrations/202607140001_initial_schema.sql` no SQL Editor.
-3. Crie a usuária em **Authentication > Users**.
+2. Execute, nesta ordem, as migrations:
+   - `supabase/migrations/202607140001_initial_schema.sql`
+   - `supabase/migrations/202607160002_security_hardening.sql`
+3. Desative o cadastro público no Supabase Auth e crie a primeira usuária em **Authentication > Users**.
 4. Cadastre na Vercel:
 
 ```env
@@ -52,13 +54,15 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 CRON_SECRET=
+ADMIN_BOOTSTRAP_EMAILS=admin@exemplo.com
+NEXT_PUBLIC_ENABLE_DEMO_MODE=false
 ```
 
-Na primeira entrada, a aplicação cria o vínculo da usuária autenticada em `profiles`. O primeiro perfil recebe a função `ADMIN`; perfis seguintes recebem `GESTOR`. Um perfil desativado não é reativado automaticamente.
+Na primeira entrada, somente um e-mail listado em `ADMIN_BOOTSTRAP_EMAILS` pode criar o primeiro perfil `ADMIN`. Depois disso, nenhum novo usuário autenticado recebe acesso automaticamente; ele precisa ser autorizado por um administrador.
 
 ## Segurança
 
-As tabelas não aceitam acesso anônimo. Usuários autenticados só acessam os dados quando possuem um perfil ativo. A rota de criação do perfil valida a sessão e usa a `service_role` exclusivamente no servidor.
+As tabelas não aceitam acesso anônimo e as escritas do navegador foram removidas. Alterações passam por funções RPC com separação de funções, validação, concorrência e auditoria. Pagamentos não são apagados: lançamentos incorretos são anulados com motivo, mantendo a trilha financeira. Consulte `SECURITY-HARDENING.md` antes de implantar.
 
 ## Validação
 

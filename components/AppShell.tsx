@@ -24,7 +24,7 @@ const links = [
   { href: "/clientes", label: "Clientes", icon: ContactRound },
   { href: "/financeiro", label: "Financeiro", icon: CircleDollarSign },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, adminOnly: true },
 ];
 
 function titleFromPath(pathname: string) {
@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { isDemo } = useAgenda();
+  const { isDemo, role } = useAgenda();
   const [title, subtitle] = titleFromPath(pathname);
 
   async function logout() {
@@ -74,7 +74,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="nav-group-label">Menu principal</div>
         <nav className="nav-list">
-          {links.map(({ href, label, icon: Icon }) => {
+          {links
+            .filter((link) => !link.adminOnly || role === "ADMIN")
+            .map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
 
             return (

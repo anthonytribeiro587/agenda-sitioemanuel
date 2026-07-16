@@ -1,0 +1,10 @@
+ATENÇÃO — ORDEM DE APLICAÇÃO
+
+1. Configure as variáveis indicadas em .env.example na Vercel.
+2. Execute no Supabase SQL Editor a migration:
+   supabase/migrations/202607160002_security_hardening.sql
+3. Somente depois substitua os demais arquivos e faça o deploy.
+
+O front-end novo usa funções RPC criadas pela migration. Publicar o front antes da migration fará as operações de gravação falharem.
+
+Este pacote contém somente os arquivos alterados, mantendo as pastas corretas.

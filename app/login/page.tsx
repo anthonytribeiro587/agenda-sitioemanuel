@@ -3,11 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarCheck2, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
-import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
+import {
+  createSupabaseBrowserClient,
+  isDemoModeEnabled,
+  isSupabaseConfigured,
+} from "@/lib/supabase/browser";
 
 export default function LoginPage() {
   const router = useRouter();
-  const demo = !isSupabaseConfigured();
+  const configured = isSupabaseConfigured();
+  const demo = !configured && isDemoModeEnabled();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -16,22 +21,51 @@ export default function LoginPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (demo) {
-      router.push("/dashboard");
+      router.replace("/dashboard");
+      return;
+    }
+
+    if (!configured) {
+      setError("O acesso está temporariamente indisponível. Contate o administrador.");
       return;
     }
 
     const supabase = createSupabaseBrowserClient();
-    if (!supabase) return;
+    if (!supabase) {
+      setError("O acesso está temporariamente indisponível.");
+      return;
+    }
 
     setLoading(true);
     setError("");
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    const normalizedEmail = email.trim().toLowerCase().slice(0, 254);
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password: password.slice(0, 256),
+    });
+
     if (authError) {
-      setError("Não foi possível entrar. Confira o e-mail e a senha.");
+      setLoading(false);
+      setError("Não foi possível entrar. Confira os dados e tente novamente.");
       return;
     }
-    router.push("/dashboard");
+
+    const bootstrapResponse = await fetch("/api/profile/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+
+    if (!bootstrapResponse.ok) {
+      const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null;
+      await supabase.auth.signOut();
+      setLoading(false);
+      setError(body?.error ?? "Seu usuário não está autorizado.");
+      return;
+    }
+
+    setLoading(false);
+    router.replace("/dashboard");
     router.refresh();
   }
 
@@ -59,8 +93,8 @@ export default function LoginPage() {
           <p>Entre com o usuário autorizado para gerenciar a agenda do Sítio Emanuel.</p>
           {error ? <div className="error-box">{error}</div> : null}
           <form onSubmit={submit} className="form-grid" style={{gridTemplateColumns:"1fr"}}>
-            <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required={!demo} placeholder="seuemail@exemplo.com" /></label>
-            <label className="field"><span className="label">Senha</span><input className="input" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} required={!demo} placeholder="••••••••" /></label>
+            <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={email} onChange={(e)=>setEmail(e.target.value.slice(0, 254))} required={!demo} autoComplete="username" inputMode="email" maxLength={254} placeholder="seuemail@exemplo.com" /></label>
+            <label className="field"><span className="label">Senha</span><input className="input" type="password" value={password} onChange={(e)=>setPassword(e.target.value.slice(0, 256))} required={!demo} autoComplete="current-password" maxLength={256} placeholder="••••••••" /></label>
             <button className="button button-primary" type="submit" disabled={loading}>{loading ? "Entrando..." : demo ? "Entrar na demonstração" : "Entrar"}</button>
           </form>
           {demo ? <div className="demo-box"><strong>Modo de demonstração ativo.</strong><br/>Os dados ficam apenas neste navegador até o Supabase ser conectado.</div> : null}

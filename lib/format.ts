@@ -40,7 +40,9 @@ export function formatRange(start: string, end: string) {
 }
 
 export function paymentTotal(payments: Payment[] | undefined) {
-  return (payments ?? []).reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  return (payments ?? [])
+    .filter((payment) => !payment.voided_at)
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
 }
 
 export function reservationBalance(reservation: Reservation) {

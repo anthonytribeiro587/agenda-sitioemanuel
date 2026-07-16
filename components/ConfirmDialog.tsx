@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, X } from "lucide-react";
+import type { ReactNode } from "react";
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -9,6 +10,8 @@ type ConfirmDialogProps = {
   confirmLabel: string;
   busy?: boolean;
   tone?: "danger" | "warning";
+  children?: ReactNode;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 };
@@ -20,6 +23,8 @@ export function ConfirmDialog({
   confirmLabel,
   busy = false,
   tone = "danger",
+  children,
+  confirmDisabled = false,
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -40,6 +45,7 @@ export function ConfirmDialog({
         <div className={`confirm-icon ${tone}`}><AlertTriangle /></div>
         <h2 id="confirm-title">{title}</h2>
         <p>{description}</p>
+        {children ? <div className="confirm-extra">{children}</div> : null}
         <div className="confirm-actions">
           <button className="button button-secondary" type="button" onClick={onCancel} disabled={busy}>
             Voltar
@@ -48,7 +54,7 @@ export function ConfirmDialog({
             className={tone === "danger" ? "button button-danger" : "button button-primary"}
             type="button"
             onClick={() => void onConfirm()}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
           >
             {busy ? "Aguarde..." : confirmLabel}
           </button>
