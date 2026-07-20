@@ -24,12 +24,10 @@ export async function GET(request: Request) {
     return noStoreJson({ ok: false }, { status: 503 });
   }
 
-  const { error } = await supabase
-    .from("profiles")
-    .select("id", { head: true, count: "exact" });
+  const { data, error } = await supabase.rpc("agenda_healthcheck");
 
-  if (error) {
-    console.error("Supabase keepalive failed", { code: error.code });
+  if (error || data !== true) {
+    console.error("Supabase keepalive failed", { code: error?.code ?? "INVALID_RESPONSE" });
     return noStoreJson({ ok: false }, { status: 500 });
   }
 

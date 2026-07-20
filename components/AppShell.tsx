@@ -12,7 +12,7 @@ import {
   ListChecks,
   LogOut,
   Menu,
-  Settings,
+  SlidersHorizontal,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useAgenda } from "@/components/AgendaProvider";
@@ -24,7 +24,7 @@ const links = [
   { href: "/clientes", label: "Clientes", icon: ContactRound },
   { href: "/financeiro", label: "Financeiro", icon: CircleDollarSign },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { href: "/configuracoes", label: "Configurações", icon: Settings, adminOnly: true },
+  { href: "/configuracoes", label: "Parametrizações", icon: SlidersHorizontal, adminOnly: true },
 ];
 
 function titleFromPath(pathname: string) {
@@ -35,7 +35,7 @@ function titleFromPath(pathname: string) {
   if (pathname.startsWith("/clientes")) return ["Clientes", "Contatos atendidos"];
   if (pathname.startsWith("/financeiro")) return ["Financeiro", "Sinais e saldos"];
   if (pathname.startsWith("/relatorios")) return ["Relatórios", "Indicadores e exportação"];
-  if (pathname.startsWith("/configuracoes")) return ["Configurações", "Acessos e integrações"];
+  if (pathname.startsWith("/configuracoes")) return ["Parametrizações", "Padrões para novas reservas"];
   return ["Agenda", "Gestão interna"];
 }
 
@@ -77,20 +77,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {links
             .filter((link) => !link.adminOnly || role === "ADMIN")
             .map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(`${href}/`);
+              const active = pathname === href || pathname.startsWith(`${href}/`);
 
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                className={`nav-link ${active ? "active" : ""}`}
-              >
-                <Icon aria-hidden="true" />
-                {label}
-              </Link>
-            );
-          })}
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setOpen(false)}
+                  className={`nav-link ${active ? "active" : ""}`}
+                >
+                  <Icon aria-hidden="true" />
+                  {label}
+                </Link>
+              );
+            })}
         </nav>
 
         <button className="sidebar-logout" type="button" onClick={logout}>

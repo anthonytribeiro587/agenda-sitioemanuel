@@ -7,6 +7,7 @@ import "./workflow-management.css";
 import "./final-mobile.css";
 import "./refinement.css";
 import "./security.css";
+import "./settings-v4.css";
 
 export const dynamic = "force-dynamic";
 
