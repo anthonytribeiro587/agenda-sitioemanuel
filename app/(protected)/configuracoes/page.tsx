@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   Eye,
@@ -18,12 +18,9 @@ import { formatCurrency, renderWhatsappTemplate } from "@/lib/format";
 export default function ConfiguracoesPage() {
   const { role } = useAgenda();
   const { settings, loading, saving, error, updateSettings } = useSettings();
-  const [form, setForm] = useState<AppSettings>(settings);
+  const [draft, setDraft] = useState<Partial<AppSettings>>({});
   const [feedback, setFeedback] = useState("");
-
-  useEffect(() => {
-    setForm(settings);
-  }, [settings]);
+  const form = useMemo(() => ({ ...settings, ...draft }), [draft, settings]);
 
   const preview = useMemo(
     () =>
@@ -41,7 +38,7 @@ export default function ConfiguracoesPage() {
   );
 
   function updateField<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function submit(event: React.FormEvent) {
@@ -49,6 +46,7 @@ export default function ConfiguracoesPage() {
     setFeedback("");
     try {
       await updateSettings(form);
+      setDraft({});
       setFeedback("Parametrizações salvas. Os padrões serão usados somente em novas reservas.");
     } catch (saveError) {
       setFeedback(saveError instanceof Error ? saveError.message : "Não foi possível salvar as parametrizações.");
