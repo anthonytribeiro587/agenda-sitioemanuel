@@ -8,6 +8,7 @@ import "./final-mobile.css";
 import "./refinement.css";
 import "./security.css";
 import "./settings-v4.css";
+import "./customer-history.css";
 
 export const dynamic = "force-dynamic";
 
