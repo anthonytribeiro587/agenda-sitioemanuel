@@ -101,3 +101,5 @@
     transform: translate(-50%, 0) scale(1);
   }
 }
+
+/* Mantido separado para que o ajuste possa ser removido sem afetar o histórico. */
