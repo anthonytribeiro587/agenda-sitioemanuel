@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   Building2,
@@ -10,6 +11,7 @@ import {
   ChevronRight,
   Clock3,
   Edit3,
+  Eye,
   FileText,
   History,
   Mail,
@@ -18,6 +20,7 @@ import {
   Phone,
   Plus,
   Search,
+  Trash2,
   UserRound,
   UsersRound,
   WalletCards,
@@ -109,6 +112,7 @@ export default function ClientesPage() {
     refresh,
     role,
   } = useAgenda();
+
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [statusFilter, setStatusFilter] = useState<CustomerStatusFilter>("all");
@@ -116,45 +120,85 @@ export default function ClientesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
+  const [actionMenuCustomerId, setActionMenuCustomerId] = useState<string | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
   const [form, setForm] = useState<CustomerInput>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [deleteReason, setDeleteReason] = useState("");
+
   const canManageCustomers = role === "ADMIN" || role === "GESTOR";
   const canDeleteCustomers = role === "ADMIN";
 
   useEffect(() => {
+    setPortalReady(true);
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
     if (!formOpen && !detailCustomerId) return;
+
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (formOpen) closeForm();
+      else setDetailCustomerId(null);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
     return () => {
       document.body.style.overflow = previous;
+      window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [detailCustomerId, formOpen]);
+  }, [detailCustomerId, formOpen, saving]);
+
+  useEffect(() => {
+    if (!actionMenuCustomerId) return;
+
+    const closeMenu = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(`[data-customer-menu="${actionMenuCustomerId}"]`)) return;
+      setActionMenuCustomerId(null);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActionMenuCustomerId(null);
+    };
+
+    document.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [actionMenuCustomerId]);
 
   useEffect(() => {
     setPage(1);
+    setActionMenuCustomerId(null);
   }, [deferredQuery, statusFilter]);
 
   const reservationsByCustomer = useMemo(() => {
     const map = new Map<string, Reservation[]>();
+
     reservations.forEach((reservation) => {
       if (!reservation.customer_id) return;
       const current = map.get(reservation.customer_id) ?? [];
       current.push(reservation);
       map.set(reservation.customer_id, current);
     });
+
     map.forEach((items) => items.sort((a, b) => b.start_date.localeCompare(a.start_date)));
     return map;
   }, [reservations]);
 
   const filtered = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase("pt-BR");
+
     return customers.filter((customer) => {
       const history = reservationsByCustomer.get(customer.id) ?? [];
       const matchesText =
@@ -165,6 +209,7 @@ export default function ClientesPage() {
           .includes(normalized);
       const matchesStatus =
         statusFilter === "all" || customerStatus(history).key === statusFilter;
+
       return matchesText && matchesStatus;
     });
   }, [customers, deferredQuery, reservationsByCustomer, statusFilter]);
@@ -198,6 +243,7 @@ export default function ClientesPage() {
   const latestReservation = selectedHistory[0] ?? null;
 
   function openCreate() {
+    setActionMenuCustomerId(null);
     setEditingId(null);
     setForm(emptyForm);
     setFeedback("");
@@ -205,6 +251,7 @@ export default function ClientesPage() {
   }
 
   function openEdit(customer: Customer) {
+    setActionMenuCustomerId(null);
     setDetailCustomerId(null);
     setEditingId(customer.id);
     setForm({
@@ -242,6 +289,7 @@ export default function ClientesPage() {
         await createCustomer(form);
         setFeedback("Cliente cadastrado.");
       }
+
       setFormOpen(false);
       setEditingId(null);
       setForm(emptyForm);
@@ -259,6 +307,7 @@ export default function ClientesPage() {
     if (!deleteTarget) return;
     setSaving(true);
     setFeedback("");
+
     try {
       await deleteCustomer(deleteTarget.id, deleteReason.trim());
       setFeedback("Cliente removido com registro de auditoria.");
@@ -272,6 +321,326 @@ export default function ClientesPage() {
       setSaving(false);
     }
   }
+
+  const historyModal =
+    portalReady && selectedCustomer
+      ? createPortal(
+          <div
+            className="customer-history-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) setDetailCustomerId(null);
+            }}
+          >
+            <section
+              className="customer-history-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Histórico de ${selectedCustomer.organization}`}
+            >
+              <header className="customer-history-modal-header">
+                <div className="customer-history-modal-title">
+                  <small>Cliente e histórico</small>
+                  <h2>{selectedCustomer.organization}</h2>
+                  <p>
+                    {selectedCustomer.name} · {selectedCustomer.phone}
+                  </p>
+                </div>
+
+                <div className="customer-history-modal-actions">
+                  {canManageCustomers ? (
+                    <>
+                      <Link href="/agenda" className="button button-primary">
+                        <CalendarPlus2 /> Nova pré-reserva
+                      </Link>
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => openEdit(selectedCustomer)}
+                      >
+                        <Edit3 /> Editar ficha
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    className="confirm-close"
+                    type="button"
+                    onClick={() => setDetailCustomerId(null)}
+                    aria-label="Fechar histórico"
+                  >
+                    <X />
+                  </button>
+                </div>
+              </header>
+
+              <div className="customer-history-modal-body">
+                <div className="customer-history-mobile-actions">
+                  {canManageCustomers ? (
+                    <>
+                      <Link href="/agenda" className="button button-primary">
+                        <CalendarPlus2 /> Nova pré-reserva
+                      </Link>
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => openEdit(selectedCustomer)}
+                      >
+                        <Edit3 /> Editar ficha
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+
+                <div className="customer-history-metrics">
+                  <div className="customer-history-metric">
+                    <CalendarDays />
+                    <div>
+                      <span>Retiros realizados</span>
+                      <strong>{realizedHistory.length}</strong>
+                    </div>
+                  </div>
+                  <div className="customer-history-metric">
+                    <Clock3 />
+                    <div>
+                      <span>Último retiro</span>
+                      <strong>
+                        {lastRetreat
+                          ? formatRange(lastRetreat.start_date, lastRetreat.end_date)
+                          : "Ainda não realizado"}
+                      </strong>
+                    </div>
+                  </div>
+                  <div className="customer-history-metric">
+                    <UsersRound />
+                    <div>
+                      <span>Total de participantes</span>
+                      <strong>{totalParticipants}</strong>
+                    </div>
+                  </div>
+                  <div className="customer-history-metric">
+                    <WalletCards />
+                    <div>
+                      <span>Média por participante</span>
+                      <strong>{formatCurrency(averagePerParticipant)}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="customer-history-layout">
+                  <section className="customer-history-panel">
+                    <div className="customer-history-panel-head">
+                      <h3>Histórico de reservas</h3>
+                      <p>
+                        Pré-reservas, eventos confirmados, realizados e cancelados deste cliente.
+                      </p>
+                    </div>
+
+                    {selectedHistory.length ? (
+                      <div className="customer-history-list">
+                        {selectedHistory.map((reservation) => (
+                          <Link
+                            href={`/reservas/${reservation.id}`}
+                            className="customer-history-entry"
+                            key={reservation.id}
+                          >
+                            <div>
+                              <strong>
+                                {formatRange(reservation.start_date, reservation.end_date)}
+                              </strong>
+                              <small>{reservation.contact_name}</small>
+                            </div>
+                            <div>
+                              <strong>{reservationPeople(reservation)}</strong>
+                              <small>pessoas</small>
+                            </div>
+                            <div>
+                              <strong>{reservation.package_name || "A definir"}</strong>
+                              <small>{reservation.email || reservation.phone}</small>
+                            </div>
+                            <div>
+                              <strong>{formatCurrency(reservation.total_amount)}</strong>
+                              <small>valor combinado</small>
+                            </div>
+                            <div>
+                              <span className={statusClass(reservation.status)}>
+                                {statusLabels[reservation.status]}
+                              </span>
+                            </div>
+                            {reservation.notes ? (
+                              <p className="customer-history-entry-notes">{reservation.notes}</p>
+                            ) : null}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="customer-history-empty">
+                        O cliente está cadastrado, mas ainda não possui reservas vinculadas.
+                      </div>
+                    )}
+                  </section>
+
+                  <aside className="customer-history-aside">
+                    <section className="customer-history-note-card">
+                      <h3>Informações recorrentes</h3>
+                      <div className="customer-history-note-item">
+                        <FileText />
+                        <div>
+                          <strong>Observações da ficha</strong>
+                          <span>
+                            {selectedCustomer.notes ||
+                              "Nenhuma preferência recorrente registrada."}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="customer-history-note-item">
+                        <UserRound />
+                        <div>
+                          <strong>Responsável principal</strong>
+                          <span>{selectedCustomer.name}</span>
+                        </div>
+                      </div>
+                      <div className="customer-history-note-item">
+                        <Building2 />
+                        <div>
+                          <strong>Último pacote utilizado</strong>
+                          <span>{latestReservation?.package_name || "Ainda não informado"}</span>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="customer-history-note-card">
+                      <h3>Contato</h3>
+                      <div className="customer-history-note-item">
+                        <Phone />
+                        <div>
+                          <strong>WhatsApp</strong>
+                          <span>{selectedCustomer.phone}</span>
+                        </div>
+                      </div>
+                      <div className="customer-history-note-item">
+                        <Mail />
+                        <div>
+                          <strong>E-mail</strong>
+                          <span>{selectedCustomer.email || "Não informado"}</span>
+                        </div>
+                      </div>
+                      <a
+                        className="button button-primary button-wide"
+                        href={`https://wa.me/${normalizePhone(selectedCustomer.phone)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <MessageCircle /> Abrir WhatsApp
+                      </a>
+                    </section>
+                  </aside>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body
+        )
+      : null;
+
+  const formModal =
+    portalReady && formOpen && canManageCustomers
+      ? createPortal(
+          <div
+            className="customer-modal-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) closeForm();
+            }}
+          >
+            <section
+              className="customer-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={editingId ? "Editar cliente" : "Novo cliente"}
+            >
+              <header className="customer-modal-header">
+                <div>
+                  <span>{editingId ? "Atualizar contato" : "Novo contato"}</span>
+                  <h2>{editingId ? "Editar cliente" : "Cadastrar cliente"}</h2>
+                  <p>Dados da igreja, grupo ou responsável pelo evento.</p>
+                </div>
+                <button
+                  className="confirm-close"
+                  type="button"
+                  onClick={closeForm}
+                  aria-label="Fechar"
+                >
+                  <X />
+                </button>
+              </header>
+
+              <form className="customer-modal-form" onSubmit={submit}>
+                <div className="form-grid modern-form-grid">
+                  <label className="field">
+                    <span className="label">Responsável</span>
+                    <input
+                      className="input"
+                      value={form.name}
+                      onChange={(event) => updateField("name", event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">Igreja / organização</span>
+                    <input
+                      className="input"
+                      value={form.organization}
+                      onChange={(event) => updateField("organization", event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">WhatsApp</span>
+                    <input
+                      className="input"
+                      inputMode="tel"
+                      value={form.phone}
+                      onChange={(event) => updateField("phone", event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">E-mail</span>
+                    <input
+                      className="input"
+                      type="email"
+                      value={form.email}
+                      onChange={(event) => updateField("email", event.target.value)}
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span className="label">Observações recorrentes</span>
+                    <textarea
+                      className="textarea"
+                      value={form.notes}
+                      onChange={(event) => updateField("notes", event.target.value)}
+                      placeholder="Preferências de quartos, alimentação, horários e informações úteis para os próximos retiros..."
+                    />
+                  </label>
+                </div>
+                <div className="customer-modal-actions">
+                  <button className="button button-secondary" type="button" onClick={closeForm}>
+                    Cancelar
+                  </button>
+                  <button className="button button-primary" disabled={saving}>
+                    {saving
+                      ? "Salvando..."
+                      : editingId
+                        ? "Salvar alterações"
+                        : "Cadastrar cliente"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
     <main className="page customers-page">
@@ -362,16 +731,22 @@ export default function ClientesPage() {
                   );
                   const last = history[0] ?? null;
                   const state = customerStatus(history);
+                  const menuOpen = actionMenuCustomerId === customer.id;
 
                   return (
                     <tr
                       key={customer.id}
                       className="customer-history-row"
                       tabIndex={0}
-                      onClick={() => setDetailCustomerId(customer.id)}
+                      onClick={() => {
+                        setActionMenuCustomerId(null);
+                        setDetailCustomerId(customer.id);
+                      }}
                       onKeyDown={(event) => {
+                        if (event.currentTarget !== event.target) return;
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
+                          setActionMenuCustomerId(null);
                           setDetailCustomerId(customer.id);
                         }
                       }}
@@ -416,17 +791,107 @@ export default function ClientesPage() {
                         </span>
                       </td>
                       <td data-label="Ações" className="customer-table-action-cell">
-                        <button
-                          className="customer-table-action"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDetailCustomerId(customer.id);
-                          }}
-                          aria-label={`Abrir histórico de ${customer.organization}`}
-                        >
-                          <MoreVertical />
-                        </button>
+                        <div className="customer-row-actions" data-customer-menu={customer.id}>
+                          <button
+                            className={`customer-table-action ${menuOpen ? "active" : ""}`}
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActionMenuCustomerId((current) =>
+                                current === customer.id ? null : customer.id
+                              );
+                            }}
+                            aria-label={`Mais opções de ${customer.organization}`}
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                          >
+                            <MoreVertical />
+                          </button>
+
+                          {menuOpen ? (
+                            <div
+                              className="customer-actions-menu"
+                              role="menu"
+                              aria-label={`Ações de ${customer.organization}`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setActionMenuCustomerId(null);
+                                  setDetailCustomerId(customer.id);
+                                }}
+                              >
+                                <Eye />
+                                <span>
+                                  <strong>Ver ficha</strong>
+                                  <small>Consultar histórico completo</small>
+                                </span>
+                              </button>
+
+                              {canManageCustomers ? (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => openEdit(customer)}
+                                >
+                                  <Edit3 />
+                                  <span>
+                                    <strong>Editar cliente</strong>
+                                    <small>Atualizar contato e observações</small>
+                                  </span>
+                                </button>
+                              ) : null}
+
+                              {canManageCustomers ? (
+                                <Link
+                                  href="/agenda"
+                                  role="menuitem"
+                                  onClick={() => setActionMenuCustomerId(null)}
+                                >
+                                  <CalendarPlus2 />
+                                  <span>
+                                    <strong>Nova pré-reserva</strong>
+                                    <small>Abrir agenda para novo registro</small>
+                                  </span>
+                                </Link>
+                              ) : null}
+
+                              <a
+                                href={`https://wa.me/${normalizePhone(customer.phone)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                role="menuitem"
+                                onClick={() => setActionMenuCustomerId(null)}
+                              >
+                                <MessageCircle />
+                                <span>
+                                  <strong>Abrir WhatsApp</strong>
+                                  <small>Conversar com o responsável</small>
+                                </span>
+                              </a>
+
+                              {canDeleteCustomers && history.length === 0 ? (
+                                <button
+                                  className="danger"
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setActionMenuCustomerId(null);
+                                    setDeleteTarget(customer);
+                                  }}
+                                >
+                                  <Trash2 />
+                                  <span>
+                                    <strong>Excluir cliente</strong>
+                                    <small>Disponível apenas sem reservas</small>
+                                  </span>
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -474,296 +939,8 @@ export default function ClientesPage() {
         </footer>
       </section>
 
-      {selectedCustomer ? (
-        <div
-          className="customer-history-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setDetailCustomerId(null);
-          }}
-        >
-          <section
-            className="customer-history-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Histórico de ${selectedCustomer.organization}`}
-          >
-            <header className="customer-history-modal-header">
-              <div>
-                <small>Cliente e histórico</small>
-                <h2>{selectedCustomer.organization}</h2>
-                <p>
-                  {selectedCustomer.name} · {selectedCustomer.phone}
-                </p>
-              </div>
-              <div className="customer-history-modal-actions">
-                {canManageCustomers ? (
-                  <>
-                    <Link href="/agenda" className="button button-primary">
-                      <CalendarPlus2 /> Nova reserva
-                    </Link>
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      onClick={() => openEdit(selectedCustomer)}
-                    >
-                      <Edit3 /> Editar ficha
-                    </button>
-                  </>
-                ) : null}
-                <button
-                  className="confirm-close"
-                  type="button"
-                  onClick={() => setDetailCustomerId(null)}
-                  aria-label="Fechar histórico"
-                >
-                  <X />
-                </button>
-              </div>
-            </header>
-
-            <div className="customer-history-modal-body">
-              <div className="customer-history-metrics">
-                <div className="customer-history-metric">
-                  <CalendarDays />
-                  <div>
-                    <span>Retiros realizados</span>
-                    <strong>{realizedHistory.length}</strong>
-                  </div>
-                </div>
-                <div className="customer-history-metric">
-                  <Clock3 />
-                  <div>
-                    <span>Último retiro</span>
-                    <strong>
-                      {lastRetreat
-                        ? formatRange(lastRetreat.start_date, lastRetreat.end_date)
-                        : "Ainda não realizado"}
-                    </strong>
-                  </div>
-                </div>
-                <div className="customer-history-metric">
-                  <UsersRound />
-                  <div>
-                    <span>Total de participantes</span>
-                    <strong>{totalParticipants}</strong>
-                  </div>
-                </div>
-                <div className="customer-history-metric">
-                  <WalletCards />
-                  <div>
-                    <span>Média por participante</span>
-                    <strong>{formatCurrency(averagePerParticipant)}</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="customer-history-layout">
-                <section className="customer-history-panel">
-                  <div className="customer-history-panel-head">
-                    <h3>Histórico de reservas</h3>
-                    <p>Pré-reservas, eventos confirmados, realizados e cancelados deste cliente.</p>
-                  </div>
-                  {selectedHistory.length ? (
-                    <div className="customer-history-list">
-                      {selectedHistory.map((reservation) => (
-                        <Link
-                          href={`/reservas/${reservation.id}`}
-                          className="customer-history-entry"
-                          key={reservation.id}
-                        >
-                          <div>
-                            <strong>
-                              {formatRange(reservation.start_date, reservation.end_date)}
-                            </strong>
-                            <small>{reservation.contact_name}</small>
-                          </div>
-                          <div>
-                            <strong>{reservationPeople(reservation)}</strong>
-                            <small>pessoas</small>
-                          </div>
-                          <div>
-                            <strong>{reservation.package_name || "A definir"}</strong>
-                            <small>{reservation.email || reservation.phone}</small>
-                          </div>
-                          <div>
-                            <strong>{formatCurrency(reservation.total_amount)}</strong>
-                            <small>valor combinado</small>
-                          </div>
-                          <div>
-                            <span className={statusClass(reservation.status)}>
-                              {statusLabels[reservation.status]}
-                            </span>
-                          </div>
-                          {reservation.notes ? (
-                            <p className="customer-history-entry-notes">{reservation.notes}</p>
-                          ) : null}
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="customer-history-empty">
-                      O cliente está cadastrado, mas ainda não possui reservas vinculadas.
-                    </div>
-                  )}
-                </section>
-
-                <aside className="customer-history-aside">
-                  <section className="customer-history-note-card">
-                    <h3>Informações recorrentes</h3>
-                    <div className="customer-history-note-item">
-                      <FileText />
-                      <div>
-                        <strong>Observações da ficha</strong>
-                        <span>
-                          {selectedCustomer.notes ||
-                            "Nenhuma preferência recorrente registrada."}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="customer-history-note-item">
-                      <UserRound />
-                      <div>
-                        <strong>Responsável principal</strong>
-                        <span>{selectedCustomer.name}</span>
-                      </div>
-                    </div>
-                    <div className="customer-history-note-item">
-                      <Building2 />
-                      <div>
-                        <strong>Último pacote utilizado</strong>
-                        <span>{latestReservation?.package_name || "Ainda não informado"}</span>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="customer-history-note-card">
-                    <h3>Contato</h3>
-                    <div className="customer-history-note-item">
-                      <Phone />
-                      <div>
-                        <strong>WhatsApp</strong>
-                        <span>{selectedCustomer.phone}</span>
-                      </div>
-                    </div>
-                    <div className="customer-history-note-item">
-                      <Mail />
-                      <div>
-                        <strong>E-mail</strong>
-                        <span>{selectedCustomer.email || "Não informado"}</span>
-                      </div>
-                    </div>
-                    <a
-                      className="button button-primary button-wide"
-                      href={`https://wa.me/${normalizePhone(selectedCustomer.phone)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <MessageCircle /> Abrir WhatsApp
-                    </a>
-                  </section>
-                </aside>
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {formOpen && canManageCustomers ? (
-        <div
-          className="customer-modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) closeForm();
-          }}
-        >
-          <section
-            className="customer-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={editingId ? "Editar cliente" : "Novo cliente"}
-          >
-            <header className="customer-modal-header">
-              <div>
-                <span>{editingId ? "Atualizar contato" : "Novo contato"}</span>
-                <h2>{editingId ? "Editar cliente" : "Cadastrar cliente"}</h2>
-                <p>Dados da igreja, grupo ou responsável pelo evento.</p>
-              </div>
-              <button
-                className="confirm-close"
-                type="button"
-                onClick={closeForm}
-                aria-label="Fechar"
-              >
-                <X />
-              </button>
-            </header>
-
-            <form className="customer-modal-form" onSubmit={submit}>
-              <div className="form-grid modern-form-grid">
-                <label className="field">
-                  <span className="label">Responsável</span>
-                  <input
-                    className="input"
-                    value={form.name}
-                    onChange={(event) => updateField("name", event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">Igreja / organização</span>
-                  <input
-                    className="input"
-                    value={form.organization}
-                    onChange={(event) => updateField("organization", event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">WhatsApp</span>
-                  <input
-                    className="input"
-                    inputMode="tel"
-                    value={form.phone}
-                    onChange={(event) => updateField("phone", event.target.value)}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">E-mail</span>
-                  <input
-                    className="input"
-                    type="email"
-                    value={form.email}
-                    onChange={(event) => updateField("email", event.target.value)}
-                  />
-                </label>
-                <label className="field field-full">
-                  <span className="label">Observações recorrentes</span>
-                  <textarea
-                    className="textarea"
-                    value={form.notes}
-                    onChange={(event) => updateField("notes", event.target.value)}
-                    placeholder="Preferências de quartos, alimentação, horários e informações úteis para os próximos retiros..."
-                  />
-                </label>
-              </div>
-              <div className="customer-modal-actions">
-                <button className="button button-secondary" type="button" onClick={closeForm}>
-                  Cancelar
-                </button>
-                <button className="button button-primary" disabled={saving}>
-                  {saving
-                    ? "Salvando..."
-                    : editingId
-                      ? "Salvar alterações"
-                      : "Cadastrar cliente"}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
+      {historyModal}
+      {formModal}
 
       <ConfirmDialog
         open={deleteTarget !== null}
