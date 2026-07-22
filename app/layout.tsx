@@ -9,6 +9,7 @@ import "./refinement.css";
 import "./security.css";
 import "./settings-v4.css";
 import "./customer-history.css";
+import "./customer-actions-fix.css";
 
 export const dynamic = "force-dynamic";
 
