@@ -1,5 +1,5 @@
-/* Correção do menu de ações da tabela de clientes.
-   Mantém o menu fora da área rolável no desktop e usa bottom sheet em telas menores. */
+/* Menu de ações dos clientes.
+   O painel fica fora da área rolável da tabela em qualquer resolução. */
 
 .customer-history-row:has(.customer-table-action.active) {
   position: relative;
@@ -11,21 +11,19 @@
   overflow: visible !important;
 }
 
-.customer-actions-menu {
-  max-height: min(430px, calc(100dvh - 32px));
+.customer-actions-menu,
+.customer-history-row:last-child .customer-actions-menu {
+  position: fixed !important;
+  z-index: 2200 !important;
+  max-height: min(560px, calc(100dvh - 32px));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-/* A última linha abre para cima para não invadir o rodapé da tabela. */
-.customer-history-row:last-child .customer-actions-menu {
-  top: auto;
-  bottom: calc(100% + 8px);
-}
-
+.customer-actions-menu::before,
 .customer-history-row:last-child .customer-actions-menu::before {
-  display: none;
+  display: none !important;
 }
 
 @media (min-width: 1101px) {
@@ -37,35 +35,42 @@
   .customer-history-table {
     min-width: 0;
   }
+
+  .customer-actions-menu,
+  .customer-history-row:last-child .customer-actions-menu {
+    inset: 50% 28px auto auto !important;
+    width: 292px;
+    padding: 8px;
+    border-radius: 16px;
+    transform: translateY(-50%) !important;
+    box-shadow:
+      0 0 0 100vmax rgba(4, 29, 21, .2),
+      0 24px 70px rgba(3, 27, 19, .3);
+    animation: customer-side-panel-in .17s ease-out;
+  }
 }
 
 @media (max-width: 1100px) {
   .customer-actions-menu,
   .customer-history-row:last-child .customer-actions-menu {
-    position: fixed;
-    inset: auto auto 16px 50%;
-    z-index: 1800;
+    inset: auto auto 16px 50% !important;
     width: min(430px, calc(100vw - 24px));
-    max-height: min(620px, calc(100dvh - 32px));
-    transform: translateX(-50%);
+    padding: 8px;
     border-radius: 18px;
+    transform: translateX(-50%) !important;
     box-shadow:
       0 0 0 100vmax rgba(4, 29, 21, .54),
       0 24px 70px rgba(3, 27, 19, .38);
     animation: customer-bottom-sheet-in .18s ease-out;
-  }
-
-  .customer-actions-menu::before,
-  .customer-history-row:last-child .customer-actions-menu::before {
-    display: none;
   }
 }
 
 @media (max-width: 760px) {
   .customer-actions-menu,
   .customer-history-row:last-child .customer-actions-menu {
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
     width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
     padding: 9px;
     border-radius: 20px;
   }
@@ -91,6 +96,17 @@
   }
 }
 
+@keyframes customer-side-panel-in {
+  from {
+    opacity: 0;
+    transform: translate(14px, -50%) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
 @keyframes customer-bottom-sheet-in {
   from {
     opacity: 0;
@@ -101,5 +117,3 @@
     transform: translate(-50%, 0) scale(1);
   }
 }
-
-/* Mantido separado para que o ajuste possa ser removido sem afetar o histórico. */
