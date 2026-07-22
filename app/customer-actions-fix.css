@@ -66,6 +66,77 @@
 }
 
 @media (max-width: 760px) {
+  /* O <td> da ação não serve mais como referência no mobile.
+     O botão fica ancorado diretamente no card inteiro. */
+  .customer-history-row {
+    position: relative !important;
+    padding: 14px 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .customer-history-row td:first-child {
+    padding: 0 52px 14px 0 !important;
+  }
+
+  .customer-table-client {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    gap: 12px !important;
+    min-height: 44px;
+  }
+
+  .customer-table-client .customer-avatar {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 12px !important;
+  }
+
+  .customer-table-action-cell {
+    position: static !important;
+    display: block !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  .customer-table-action-cell::before {
+    display: none !important;
+  }
+
+  .customer-row-actions {
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    z-index: 30 !important;
+    display: block !important;
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  .customer-table-action {
+    width: 38px !important;
+    height: 38px !important;
+    margin: 0 !important;
+    border-radius: 11px !important;
+    background: #fffdf9;
+    box-shadow: 0 5px 16px rgba(5, 42, 30, .08);
+    touch-action: manipulation;
+  }
+
+  .customer-history-row td:not(:first-child):not(.customer-table-action-cell) {
+    grid-template-columns: 108px minmax(0, 1fr) !important;
+    gap: 9px !important;
+    min-height: 38px !important;
+    padding: 9px 0 !important;
+  }
+
+  .customer-table-status {
+    width: 100%;
+    max-width: 178px;
+  }
+
   .customer-actions-menu,
   .customer-history-row:last-child .customer-actions-menu {
     bottom: max(10px, env(safe-area-inset-bottom)) !important;
