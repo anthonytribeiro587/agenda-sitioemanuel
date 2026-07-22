@@ -1,0 +1,103 @@
+/* Correção do menu de ações da tabela de clientes.
+   Mantém o menu fora da área rolável no desktop e usa bottom sheet em telas menores. */
+
+.customer-history-row:has(.customer-table-action.active) {
+  position: relative;
+  z-index: 120;
+}
+
+.customer-table-action-cell,
+.customer-row-actions {
+  overflow: visible !important;
+}
+
+.customer-actions-menu {
+  max-height: min(430px, calc(100dvh - 32px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A última linha abre para cima para não invadir o rodapé da tabela. */
+.customer-history-row:last-child .customer-actions-menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.customer-history-row:last-child .customer-actions-menu::before {
+  display: none;
+}
+
+@media (min-width: 1101px) {
+  .customer-table-shell,
+  .customer-table-scroll {
+    overflow: visible !important;
+  }
+
+  .customer-history-table {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .customer-actions-menu,
+  .customer-history-row:last-child .customer-actions-menu {
+    position: fixed;
+    inset: auto auto 16px 50%;
+    z-index: 1800;
+    width: min(430px, calc(100vw - 24px));
+    max-height: min(620px, calc(100dvh - 32px));
+    transform: translateX(-50%);
+    border-radius: 18px;
+    box-shadow:
+      0 0 0 100vmax rgba(4, 29, 21, .54),
+      0 24px 70px rgba(3, 27, 19, .38);
+    animation: customer-bottom-sheet-in .18s ease-out;
+  }
+
+  .customer-actions-menu::before,
+  .customer-history-row:last-child .customer-actions-menu::before {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .customer-actions-menu,
+  .customer-history-row:last-child .customer-actions-menu {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: calc(100vw - 20px);
+    padding: 9px;
+    border-radius: 20px;
+  }
+
+  .customer-actions-menu button,
+  .customer-actions-menu a {
+    min-height: 58px;
+    grid-template-columns: 40px minmax(0, 1fr);
+    padding: 9px 11px;
+  }
+
+  .customer-actions-menu svg {
+    width: 38px;
+    height: 38px;
+  }
+
+  .customer-actions-menu strong {
+    font-size: 13px;
+  }
+
+  .customer-actions-menu small {
+    font-size: 10px;
+  }
+}
+
+@keyframes customer-bottom-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
