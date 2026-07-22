@@ -10,6 +10,8 @@ import {
   Check,
   Clock3,
   ExternalLink,
+  History,
+  Info,
   MessageCircle,
   Save,
   Trash2,
@@ -25,11 +27,12 @@ import { useSettings, type AppSettings } from "@/components/SettingsProvider";
 import {
   formatCurrency,
   formatRange,
+  normalizePhone,
   paymentTotal,
   reservationBalance,
   whatsappUrl,
 } from "@/lib/format";
-import type { PaymentMethod, ReservationStatus } from "@/lib/types";
+import type { Customer, PaymentMethod, ReservationStatus } from "@/lib/types";
 
 function initialWeekend() {
   const today = new Date();
@@ -74,17 +77,50 @@ function blankForm(settings: AppSettings): ReservationForm {
   };
 }
 
+function normalizeText(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+function findMatchingCustomer(
+  customers: Customer[],
+  form: Pick<ReservationForm, "customer_id" | "church_name" | "contact_name" | "phone">
+) {
+  if (form.customer_id) {
+    return customers.find((customer) => customer.id === form.customer_id) ?? null;
+  }
+
+  const phone = normalizePhone(form.phone);
+  if (phone) {
+    const byPhone = customers.find((customer) => normalizePhone(customer.phone) === phone);
+    if (byPhone) return byPhone;
+  }
+
+  const organization = normalizeText(form.church_name);
+  const contact = normalizeText(form.contact_name);
+  if (!organization || !contact) return null;
+
+  return (
+    customers.find(
+      (customer) =>
+        normalizeText(customer.organization) === organization &&
+        normalizeText(customer.name) === contact
+    ) ?? null
+  );
+}
+
 export function CalendarWorkspace() {
   const {
     reservations,
     customers,
     blockedPeriods,
     role,
+    createCustomer,
     createReservationWithPayment,
     updateReservation,
     updateReservationFinancial,
     addBlockedPeriod,
     removeBlockedPeriod,
+    refresh,
   } = useAgenda();
   const { settings } = useSettings();
   const initial = useMemo(() => initialWeekend(), []);
@@ -108,6 +144,10 @@ export function CalendarWorkspace() {
   const selectedBlock = blockedPeriods.find((item) => item.id === selectedBlockId) ?? null;
   const canManageReservations = role === "ADMIN" || role === "GESTOR";
   const canManageFinance = role === "ADMIN" || role === "FINANCEIRO";
+  const matchedCustomer = useMemo(
+    () => findMatchingCustomer(customers, form),
+    [customers, form]
+  );
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -193,11 +233,26 @@ export function CalendarWorkspace() {
 
     try {
       if (!canManageReservations) throw new Error("Seu perfil não pode criar reservas.");
+
+      let customer = findMatchingCustomer(customers, form);
+      let customerCreated = false;
+
+      if (!customer) {
+        customer = await createCustomer({
+          name: form.contact_name.trim(),
+          organization: form.church_name.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim(),
+          notes: "Ficha criada automaticamente a partir da primeira pré-reserva.",
+        });
+        customerCreated = true;
+      }
+
       const totalAmount = canManageFinance ? Number(form.total_amount || 0) : 0;
       const depositAmount = canManageFinance ? Number(form.deposit_amount || 0) : 0;
       const result = await createReservationWithPayment(
         {
-          customer_id: form.customer_id || null,
+          customer_id: customer.id,
           church_name: form.church_name.trim(),
           contact_name: form.contact_name.trim(),
           phone: form.phone.trim(),
@@ -222,11 +277,16 @@ export function CalendarWorkspace() {
       );
       const created = result.reservation;
 
+      await refresh();
       setSelectedReservationId(created.id);
       setSelectedBlockId(null);
       resetForm();
       setConfirmedTotal(created.total_amount ? String(created.total_amount) : "");
-      setMessage("Reserva salva com sucesso.");
+      setMessage(
+        customerCreated
+          ? "Pré-reserva salva. A ficha do cliente foi criada e o histórico começou automaticamente."
+          : "Reserva salva e adicionada ao histórico do cliente."
+      );
     } catch (error) {
       const text = error instanceof Error ? error.message : "Não foi possível salvar a reserva.";
       setMessage(
@@ -328,7 +388,9 @@ export function CalendarWorkspace() {
     message.includes("confirmada") ||
     message.includes("atualizados") ||
     message.includes("bloqueado") ||
-    message.includes("removido");
+    message.includes("removido") ||
+    message.includes("histórico") ||
+    message.includes("adicionada");
 
   return (
     <>
@@ -486,7 +548,30 @@ export function CalendarWorkspace() {
                             <span>Os padrões administrativos já foram aplicados. Ajuste somente o que mudar.</span>
                           </div>
                           <div className="form-grid compact-form-grid">
-                            <label className="field field-full customer-select-field"><span className="label"><UserRoundSearch /> Cliente cadastrado <em>opcional</em></span><select className="select" value={form.customer_id} onChange={(event) => applyCustomer(event.target.value)}><option value="">Preencher novo contato</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.organization} — {customer.name}</option>)}</select></label>
+                            <label className="field field-full customer-select-field">
+                              <span className="label"><UserRoundSearch /> Cliente cadastrado <em>opcional</em></span>
+                              <select className="select" value={form.customer_id} onChange={(event) => applyCustomer(event.target.value)}>
+                                <option value="">Localizar ou criar automaticamente</option>
+                                {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.organization} — {customer.name}</option>)}
+                              </select>
+                            </label>
+
+                            <div className="field field-full customer-auto-history-note">
+                              {matchedCustomer ? <History /> : <Info />}
+                              <div>
+                                <strong>
+                                  {matchedCustomer
+                                    ? `Histórico localizado: ${matchedCustomer.organization}`
+                                    : "Novo cliente será criado automaticamente"}
+                                </strong>
+                                <span>
+                                  {matchedCustomer
+                                    ? "A nova reserva será vinculada à ficha e aparecerá junto aos retiros anteriores."
+                                    : "Ao salvar, o sistema criará a ficha do grupo e esta pré-reserva será o primeiro registro do histórico."}
+                                </span>
+                              </div>
+                            </div>
+
                             <label className="field field-full"><span className="label">Igreja / grupo</span><input className="input" value={form.church_name} onChange={(event) => updateForm("church_name", event.target.value)} required /></label>
                             <label className="field"><span className="label">Responsável</span><input className="input" value={form.contact_name} onChange={(event) => updateForm("contact_name", event.target.value)} required /></label>
                             <label className="field"><span className="label">WhatsApp</span><input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required /></label>
