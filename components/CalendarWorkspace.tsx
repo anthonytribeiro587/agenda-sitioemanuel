@@ -369,7 +369,7 @@ export function CalendarWorkspace() {
     return role === "ADMIN" && (
       (selectedReservation.status === "CONFIRMADA" && nextStatus === "PRE_RESERVA") ||
       (selectedReservation.status === "REALIZADA" && nextStatus !== "REALIZADA") ||
-      (selectedReservation.status === "CANCELADA" && nextStatus !== "CANCELADA")
+      selectedReservation.status === "CANCELADA"
     );
   }
 
