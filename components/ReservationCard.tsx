@@ -1,6 +1,6 @@
 import { memo } from "react";
 import Link from "next/link";
-import { ArrowRight, MessageCircle, UsersRound } from "lucide-react";
+import { ArrowRight, MapPin, MessageCircle, UsersRound } from "lucide-react";
 import {
   formatCurrency,
   formatDate,
@@ -34,6 +34,7 @@ export const ReservationCard = memo(function ReservationCard({ reservation }: { 
         </div>
         <div className="reservation-meta modern-reservation-meta">
           <span>{formatRange(reservation.start_date, reservation.end_date)}</span>
+          <span><MapPin />{reservation.group_city}/{reservation.group_state}</span>
           <span><UsersRound />{reservation.guests_confirmed ?? reservation.guests_estimated} pessoas</span>
           <span>{reservation.package_name || "Cardápio a definir"}</span>
         </div>

@@ -42,7 +42,7 @@ export default function ReservasPage() {
       .filter((item) => status === "TODAS" || item.status === status)
       .filter((item) => {
         if (!normalized) return true;
-        return [item.church_name, item.contact_name, item.phone, item.email]
+        return [item.church_name, item.contact_name, item.phone, item.email, item.group_address, item.group_city, item.group_state]
           .join(" ")
           .toLowerCase()
           .includes(normalized);
@@ -69,7 +69,7 @@ export default function ReservasPage() {
           <Search />
           <input
             className="input"
-            placeholder="Buscar por igreja, responsável ou telefone..."
+            placeholder="Buscar por grupo, responsável, telefone ou cidade..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

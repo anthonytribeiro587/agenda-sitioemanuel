@@ -47,10 +47,13 @@ export default function RelatoriosPage() {
   }, [filtered]);
 
   function exportCsv() {
-    const header = ["Igreja/Grupo", "Responsável", "Início", "Fim", "Status", "Pessoas", "Valor total", "Recebido", "Saldo a receber", "Observação financeira"];
+    const header = ["Igreja/Grupo", "Responsável", "Endereço do grupo", "Cidade", "UF", "Início", "Fim", "Status", "Pessoas", "Valor total", "Recebido", "Saldo a receber", "Observação financeira"];
     const rows = filtered.map((item) => [
       item.church_name,
       item.contact_name,
+      item.group_address,
+      item.group_city,
+      item.group_state,
       item.start_date,
       item.end_date,
       statusLabel(item.status),
@@ -109,7 +112,7 @@ export default function RelatoriosPage() {
           {filtered.length ? (
             <table className="report-table">
               <thead><tr><th>Reserva</th><th>Período</th><th>Status</th><th>Pessoas</th><th>Total</th><th>Recebido</th><th>Saldo</th></tr></thead>
-              <tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.church_name}</strong><span>{item.contact_name}</span></td><td>{formatDate(item.start_date, "dd/MM/yyyy")}<span>até {formatDate(item.end_date, "dd/MM/yyyy")}</span></td><td><StatusBadge status={item.status} /></td><td>{item.guests_confirmed ?? item.guests_estimated}</td><td>{item.total_amount > 0 ? formatCurrency(item.total_amount) : "A definir"}</td><td>{formatCurrency(paymentTotal(item.payments))}</td><td className={item.status !== "CANCELADA" && reservationBalance(item) > 0 ? "pending-cell" : ""}>{item.status === "CANCELADA" ? "Conferir" : item.total_amount > 0 ? formatCurrency(reservationBalance(item)) : "—"}</td></tr>)}</tbody>
+              <tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.church_name}</strong><span>{item.contact_name}</span><span>{item.group_city}/{item.group_state}</span></td><td>{formatDate(item.start_date, "dd/MM/yyyy")}<span>até {formatDate(item.end_date, "dd/MM/yyyy")}</span></td><td><StatusBadge status={item.status} /></td><td>{item.guests_confirmed ?? item.guests_estimated}</td><td>{item.total_amount > 0 ? formatCurrency(item.total_amount) : "A definir"}</td><td>{formatCurrency(paymentTotal(item.payments))}</td><td className={item.status !== "CANCELADA" && reservationBalance(item) > 0 ? "pending-cell" : ""}>{item.status === "CANCELADA" ? "Conferir" : item.total_amount > 0 ? formatCurrency(reservationBalance(item)) : "—"}</td></tr>)}</tbody>
             </table>
           ) : <div className="empty report-empty">Nenhuma reserva encontrada para os filtros informados.</div>}
         </div>

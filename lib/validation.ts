@@ -37,6 +37,9 @@ export const customerInputSchema = z.object({
   organization: safeText(2, 160),
   phone,
   email,
+  address: safeText(5, 240),
+  city: safeText(2, 120),
+  state: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Informe a UF com 2 letras."),
   notes: optionalText(1500),
 });
 
@@ -47,6 +50,9 @@ export const reservationInputSchema = z
     contact_name: safeText(2, 120),
     phone,
     email,
+    group_address: safeText(5, 240),
+    group_city: safeText(2, 120),
+    group_state: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Informe a UF com 2 letras."),
     start_date: dateString,
     end_date: dateString,
     guests_estimated: z.coerce.number().int().min(1).max(500),

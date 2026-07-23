@@ -1,0 +1,128 @@
+/* Agenda CRUD v5 — localização do grupo, leitura do fim de semana e formulários móveis. */
+
+.prototype-calendar-body {
+  grid-template-rows: repeat(var(--calendar-weeks, 5), minmax(118px, 1fr));
+}
+
+.prototype-week-row,
+.prototype-day-cell {
+  min-height: 118px;
+}
+
+.prototype-day-cell {
+  padding-bottom: 76px;
+}
+
+.prototype-booking-bar {
+  height: 64px;
+  margin-top: 38px;
+  padding: 7px 10px;
+  gap: 2px;
+  align-content: center;
+  text-align: left;
+}
+
+.prototype-booking-bar strong,
+.prototype-booking-bar span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prototype-booking-bar strong {
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+.prototype-booking-bar .booking-responsible,
+.prototype-booking-bar .booking-city {
+  font-size: 8.5px;
+  line-height: 1.15;
+}
+
+.prototype-booking-bar .booking-city {
+  font-weight: 700;
+}
+
+.compact-info-wide,
+.summary-info-wide {
+  grid-column: 1 / -1;
+}
+
+.calendar-status-form {
+  display: grid;
+  gap: 11px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid var(--prototype-line, rgba(18, 61, 47, .14));
+  border-radius: 12px;
+  background: #faf8f2;
+}
+
+.calendar-status-form .mini-section-title {
+  margin-bottom: 1px;
+}
+
+.calendar-status-form .button {
+  margin-top: 1px;
+}
+
+@media (max-width: 760px) {
+  .prototype-calendar {
+    scroll-behavior: smooth;
+    scroll-snap-type: x proximity;
+  }
+
+  .prototype-weekdays,
+  .prototype-calendar-body,
+  .prototype-week-row {
+    min-width: 700px !important;
+  }
+
+  .prototype-calendar-body {
+    grid-template-rows: repeat(var(--calendar-weeks, 5), 134px);
+  }
+
+  .prototype-week-row,
+  .prototype-day-cell {
+    min-height: 134px;
+  }
+
+  .prototype-day-cell {
+    padding: 11px 10px 82px;
+  }
+
+  .prototype-booking-bar {
+    height: 70px;
+    margin-top: 42px;
+    padding: 8px 10px;
+  }
+
+  .prototype-booking-bar strong {
+    font-size: 10px;
+  }
+
+  .prototype-booking-bar .booking-responsible,
+  .prototype-booking-bar .booking-city {
+    font-size: 8px;
+  }
+
+  .prototype-reservation-modal-grid,
+  .compact-info-grid,
+  .calendar-period-fields,
+  .compact-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-info-wide,
+  .summary-info-wide,
+  .field-full {
+    grid-column: 1;
+  }
+
+  .calendar-status-form {
+    padding: 13px;
+  }
+}

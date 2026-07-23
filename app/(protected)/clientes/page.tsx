@@ -38,6 +38,9 @@ const emptyForm: CustomerInput = {
   organization: "",
   phone: "",
   email: "",
+  address: "",
+  city: "",
+  state: "RS",
   notes: "",
 };
 
@@ -203,7 +206,7 @@ export default function ClientesPage() {
       const history = reservationsByCustomer.get(customer.id) ?? [];
       const matchesText =
         !normalized ||
-        [customer.name, customer.organization, customer.phone, customer.email]
+        [customer.name, customer.organization, customer.phone, customer.email, customer.address, customer.city, customer.state]
           .join(" ")
           .toLocaleLowerCase("pt-BR")
           .includes(normalized);
@@ -259,6 +262,9 @@ export default function ClientesPage() {
       organization: customer.organization,
       phone: customer.phone,
       email: customer.email,
+      address: customer.address,
+      city: customer.city,
+      state: customer.state,
       notes: customer.notes,
     });
     setFeedback("");
@@ -509,7 +515,14 @@ export default function ClientesPage() {
                     </section>
 
                     <section className="customer-history-note-card">
-                      <h3>Contato</h3>
+                      <h3>Contato e localização</h3>
+                      <div className="customer-history-note-item">
+                        <Building2 />
+                        <div>
+                          <strong>Endereço do grupo</strong>
+                          <span>{selectedCustomer.address} — {selectedCustomer.city}/{selectedCustomer.state}</span>
+                        </div>
+                      </div>
                       <div className="customer-history-note-item">
                         <Phone />
                         <div>
@@ -614,6 +627,35 @@ export default function ClientesPage() {
                     />
                   </label>
                   <label className="field field-full">
+                    <span className="label">Endereço do grupo</span>
+                    <input
+                      className="input"
+                      value={form.address}
+                      onChange={(event) => updateField("address", event.target.value)}
+                      placeholder="Rua, número, bairro"
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">Cidade</span>
+                    <input
+                      className="input"
+                      value={form.city}
+                      onChange={(event) => updateField("city", event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="label">UF</span>
+                    <input
+                      className="input"
+                      value={form.state}
+                      maxLength={2}
+                      onChange={(event) => updateField("state", event.target.value.toUpperCase())}
+                      required
+                    />
+                  </label>
+                  <label className="field field-full">
                     <span className="label">Observações recorrentes</span>
                     <textarea
                       className="textarea"
@@ -686,7 +728,7 @@ export default function ClientesPage() {
               className="input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por cliente, igreja, responsável, telefone ou e-mail..."
+              placeholder="Buscar por cliente, igreja, responsável, telefone, cidade ou e-mail..."
             />
           </label>
 

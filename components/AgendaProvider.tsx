@@ -75,11 +75,12 @@ type AgendaContextValue = {
   addPayment: (input: PaymentInput) => Promise<Payment>;
   deletePayment: (id: string, reservationId: string, reason: string) => Promise<void>;
   addBlockedPeriod: (input: BlockedPeriodInput) => Promise<BlockedPeriod>;
+  updateBlockedPeriod: (id: string, input: BlockedPeriodInput, reason: string) => Promise<void>;
   removeBlockedPeriod: (id: string, reason: string) => Promise<void>;
 };
 
 const AgendaContext = createContext<AgendaContextValue | null>(null);
-const STORAGE_KEY = "agenda-sitio-emanuel-demo-v3";
+const STORAGE_KEY = "agenda-sitio-emanuel-demo-v4";
 
 const RESERVATION_DETAIL_KEYS = new Set<keyof ReservationInput>([
   "customer_id",
@@ -87,6 +88,9 @@ const RESERVATION_DETAIL_KEYS = new Set<keyof ReservationInput>([
   "contact_name",
   "phone",
   "email",
+  "group_address",
+  "group_city",
+  "group_state",
   "start_date",
   "end_date",
   "guests_estimated",
@@ -123,9 +127,22 @@ function normalizePayment(payment: Payment): Payment {
   return { ...payment, amount: Number(payment.amount ?? 0) };
 }
 
+function normalizeCustomer(customer: Customer): Customer {
+  return {
+    ...customer,
+    address: customer.address ?? "Endereço não informado",
+    city: customer.city ?? "Cidade não informada",
+    state: (customer.state ?? "RS").toUpperCase(),
+  };
+}
+
 function normalizeReservation(reservation: Reservation): Reservation {
   return {
     ...reservation,
+    group_address:
+      reservation.group_address ?? reservation.customer?.address ?? "Endereço não informado",
+    group_city: reservation.group_city ?? reservation.customer?.city ?? "Cidade não informada",
+    group_state: (reservation.group_state ?? reservation.customer?.state ?? "RS").toUpperCase(),
     total_amount: Number(reservation.total_amount ?? 0),
     guests_estimated: Number(reservation.guests_estimated ?? 1),
     guests_confirmed:
@@ -141,7 +158,8 @@ function hydrateReservations(
   customers: Customer[],
   payments: Payment[]
 ) {
-  const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+  const normalizedCustomers = customers.map(normalizeCustomer);
+  const customerById = new Map(normalizedCustomers.map((customer) => [customer.id, customer]));
   const paymentsByReservation = new Map<string, Payment[]>();
 
   payments.forEach((payment) => {
@@ -165,7 +183,7 @@ function hydrateReservations(
 function initialDemo(): StoredDemo {
   return {
     reservations: hydrateReservations(demoReservations, demoCustomers, demoPayments),
-    customers: demoCustomers,
+    customers: demoCustomers.map(normalizeCustomer),
     blockedPeriods: demoBlockedPeriods,
   };
 }
@@ -177,6 +195,9 @@ function reservationInputFromRow(reservation: Reservation): ReservationInput {
     contact_name: reservation.contact_name,
     phone: reservation.phone,
     email: reservation.email,
+    group_address: reservation.group_address,
+    group_city: reservation.group_city,
+    group_state: reservation.group_state,
     start_date: reservation.start_date,
     end_date: reservation.end_date,
     guests_estimated: reservation.guests_estimated,
@@ -218,6 +239,11 @@ function databaseMessage(error: unknown) {
     ["ADMIN_REQUIRED", "Esta ação exige perfil de administrador."],
     ["STALE_RESERVATION", "A reserva foi alterada em outra tela. Atualize a página antes de salvar."],
     ["RESERVATION_CONFLICTS_WITH_BLOCK", "O período está bloqueado."],
+    ["BLOCK_CONFLICTS_WITH_RESERVATION", "Existe uma reserva ativa nesse período."],
+    ["BLOCK_WRITE_FORBIDDEN", "Seu perfil não pode alterar bloqueios."],
+    ["BLOCK_DATE_OUT_OF_RANGE", "A data do bloqueio está fora do período permitido."],
+    ["BLOCK_REASON_REQUIRED", "Informe um motivo válido para o bloqueio."],
+    ["AUDIT_REASON_REQUIRED", "Informe o motivo da alteração para a auditoria."],
     ["reservations_no_active_overlap", "O período entra em conflito com outra reserva."],
     ["blocked_periods_no_overlap", "Já existe um bloqueio nesse período."],
     ["TOTAL_BELOW_RECEIVED", "O valor combinado não pode ser menor que o total recebido."],
@@ -309,7 +335,17 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           try {
-            applySnapshot(JSON.parse(raw) as StoredDemo);
+            const stored = JSON.parse(raw) as StoredDemo;
+            const normalizedCustomers = (stored.customers ?? []).map(normalizeCustomer);
+            applySnapshot({
+              customers: normalizedCustomers,
+              reservations: hydrateReservations(
+                stored.reservations ?? [],
+                normalizedCustomers,
+                (stored.reservations ?? []).flatMap((reservation) => reservation.payments ?? [])
+              ),
+              blockedPeriods: stored.blockedPeriods ?? [],
+            });
           } catch {
             applySnapshot(initialDemo());
           }
@@ -339,7 +375,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
         reservationResult.error || customerResult.error || paymentResult.error || blockResult.error;
       if (error) throw new Error(databaseMessage(error));
 
-      const fetchedCustomers = (customerResult.data ?? []) as Customer[];
+      const fetchedCustomers = ((customerResult.data ?? []) as Customer[]).map(normalizeCustomer);
       const fetchedPayments = (paymentResult.data ?? []) as Payment[];
       applySnapshot(
         {
@@ -423,6 +459,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           p_contact_name: input.contact_name,
           p_phone: input.phone,
           p_email: input.email,
+          p_group_address: input.group_address,
+          p_group_city: input.group_city,
+          p_group_state: input.group_state,
           p_start_date: input.start_date,
           p_end_date: input.end_date,
           p_guests_estimated: input.guests_estimated,
@@ -533,6 +572,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           p_contact_name: input.contact_name,
           p_phone: input.phone,
           p_email: input.email,
+          p_group_address: input.group_address,
+          p_group_city: input.group_city,
+          p_group_state: input.group_state,
           p_start_date: input.start_date,
           p_end_date: input.end_date,
           p_guests_estimated: input.guests_estimated,
@@ -643,6 +685,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
             p_contact_name: merged.contact_name,
             p_phone: merged.phone,
             p_email: merged.email,
+            p_group_address: merged.group_address,
+            p_group_city: merged.group_city,
+            p_group_state: merged.group_state,
             p_start_date: merged.start_date,
             p_end_date: merged.end_date,
             p_guests_estimated: merged.guests_estimated,
@@ -854,6 +899,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           p_organization: input.organization,
           p_phone: input.phone,
           p_email: input.email,
+          p_address: input.address,
+          p_city: input.city,
+          p_state: input.state,
           p_notes: input.notes,
         });
         if (error) throw new Error(databaseMessage(error));
@@ -894,6 +942,9 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
           p_organization: input.organization,
           p_phone: input.phone,
           p_email: input.email,
+          p_address: input.address,
+          p_city: input.city,
+          p_state: input.state,
           p_notes: input.notes,
         });
         if (error) throw new Error(databaseMessage(error));
@@ -1101,6 +1152,60 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
     [applySnapshot, ensureProfile, isDemo, supabase]
   );
 
+  const updateBlockedPeriod = useCallback(
+    async (id: string, rawInput: BlockedPeriodInput, rawReason: string) => {
+      let input: BlockedPeriodInput;
+      let reason: string;
+      try {
+        input = parseBlockedPeriodInput(rawInput);
+        reason = parseAuditReason(rawReason);
+      } catch (error) {
+        throw new Error(validationMessage(error));
+      }
+
+      const current = blockedPeriodsRef.current.find((period) => period.id === id);
+      if (!current) throw new Error("Bloqueio não encontrado.");
+
+      let updated: BlockedPeriod;
+      if (isDemo) {
+        const conflictsReservation = reservationsRef.current.some(
+          (reservation) =>
+            isBlockingStatus(reservation.status) &&
+            rangesOverlap(input.start_date, input.end_date, reservation.start_date, reservation.end_date)
+        );
+        const conflictsBlock = blockedPeriodsRef.current.some(
+          (period) =>
+            period.id !== id &&
+            rangesOverlap(input.start_date, input.end_date, period.start_date, period.end_date)
+        );
+        if (conflictsReservation || conflictsBlock) throw new Error("BLOCK_CONFLICT");
+        updated = { ...current, ...input };
+      } else {
+        if (!supabase) throw new Error("Banco indisponível.");
+        await ensureProfile();
+        const { data, error } = await supabase.rpc("update_blocked_period_secure", {
+          p_request_id: crypto.randomUUID(),
+          p_id: id,
+          p_start_date: input.start_date,
+          p_end_date: input.end_date,
+          p_block_reason: input.reason,
+          p_audit_reason: reason,
+        });
+        if (error) throw new Error(databaseMessage(error));
+        updated = rpcRow(data as BlockedPeriod | BlockedPeriod[] | null);
+      }
+
+      applySnapshot({
+        reservations: reservationsRef.current,
+        customers: customersRef.current,
+        blockedPeriods: blockedPeriodsRef.current
+          .map((period) => (period.id === id ? updated : period))
+          .sort((a, b) => a.start_date.localeCompare(b.start_date)),
+      });
+    },
+    [applySnapshot, ensureProfile, isDemo, supabase]
+  );
+
   const removeBlockedPeriod = useCallback(
     async (id: string, rawReason: string) => {
       let reason: string;
@@ -1149,6 +1254,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       addPayment,
       deletePayment,
       addBlockedPeriod,
+      updateBlockedPeriod,
       removeBlockedPeriod,
     }),
     [
@@ -1168,6 +1274,7 @@ export function AgendaProvider({ children }: { children: ReactNode }) {
       removeBlockedPeriod,
       reservations,
       role,
+      updateBlockedPeriod,
       updateCustomer,
       updateReservation,
       updateReservationFinancial,

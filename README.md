@@ -11,7 +11,7 @@ Sistema interno para organizar reservas, clientes, pagamentos e disponibilidade 
 - a pré-reserva pode começar apenas com o sinal;
 - o valor total pode ser preenchido depois da negociação;
 - pagamentos posteriores atualizam o saldo automaticamente;
-- períodos podem ser bloqueados para manutenção ou uso interno;
+- períodos podem ser cadastrados, editados e removidos para manutenção ou uso interno;
 - relatórios podem ser filtrados e exportados em CSV.
 
 ## Funcionalidades
@@ -19,9 +19,9 @@ Sistema interno para organizar reservas, clientes, pagamentos e disponibilidade 
 - login privado com Supabase Auth;
 - bootstrap controlado do primeiro administrador por e-mail previamente autorizado;
 - dashboard compacto com indicadores operacionais;
-- calendário mensal começando na segunda-feira;
+- calendário mensal começando na segunda-feira e, no celular, abrindo no fim da semana;
 - pré-reservas, reservas confirmadas, realizadas e períodos bloqueados;
-- cadastro e reutilização de responsáveis, igrejas e clientes;
+- cadastro e reutilização de responsáveis, igrejas e clientes, incluindo endereço, cidade e UF;
 - registro de sinal e demais pagamentos;
 - valor total opcional até a negociação ser concluída;
 - financeiro sem criar saldo artificial para reservas sem total definido;
@@ -46,6 +46,9 @@ O modo demonstração só funciona fora de produção e quando `NEXT_PUBLIC_ENAB
 2. Execute, nesta ordem, as migrations:
    - `supabase/migrations/202607140001_initial_schema.sql`
    - `supabase/migrations/202607160002_security_hardening.sql`
+   - `supabase/migrations/202607160003_security_audit_round2.sql`
+   - `supabase/migrations/202607200004_app_settings.sql`
+   - `supabase/migrations/202607230005_group_location_crud.sql`
 3. Desative o cadastro público no Supabase Auth e crie a primeira usuária em **Authentication > Users**.
 4. Cadastre na Vercel:
 
@@ -62,7 +65,7 @@ Na primeira entrada, somente um e-mail listado em `ADMIN_BOOTSTRAP_EMAILS` pode 
 
 ## Segurança
 
-As tabelas não aceitam acesso anônimo e as escritas do navegador foram removidas. Alterações passam por funções RPC com separação de funções, validação, concorrência e auditoria. Pagamentos não são apagados: lançamentos incorretos são anulados com motivo, mantendo a trilha financeira. Consulte `SECURITY-HARDENING.md` antes de implantar.
+As tabelas não aceitam acesso anônimo e as escritas do navegador foram removidas. Alterações passam por funções RPC com separação de funções, validação, concorrência e auditoria. Pagamentos não são apagados: lançamentos incorretos são anulados com motivo, mantendo a trilha financeira. Consulte `SECURITY-HARDENING.md`, `AUDITORIA-SEGURANCA-V5.md` e `ENTREGA-PRODUCAO-CRUD.md` antes de implantar.
 
 ## Validação
 

@@ -40,6 +40,9 @@ type ReservationDraft = {
   contact_name: string;
   phone: string;
   email: string;
+  group_address: string;
+  group_city: string;
+  group_state: string;
   start_date: string;
   end_date: string;
   guests_estimated: string;
@@ -55,6 +58,9 @@ function draftFromReservation(reservation: Reservation): ReservationDraft {
     contact_name: reservation.contact_name,
     phone: reservation.phone,
     email: reservation.email,
+    group_address: reservation.group_address,
+    group_city: reservation.group_city,
+    group_state: reservation.group_state,
     start_date: reservation.start_date,
     end_date: reservation.end_date,
     guests_estimated: String(reservation.guests_estimated),
@@ -248,6 +254,9 @@ export default function ReservationDetailsPage() {
         contact_name: draft.contact_name.trim(),
         phone: draft.phone.trim(),
         email: draft.email.trim(),
+        group_address: draft.group_address.trim(),
+        group_city: draft.group_city.trim(),
+        group_state: draft.group_state.trim().toUpperCase(),
         start_date: draft.start_date,
         end_date: draft.end_date,
         guests_estimated: Number(draft.guests_estimated || 1),
@@ -415,6 +424,8 @@ export default function ReservationDetailsPage() {
                   <div><span>Responsável</span><strong>{currentReservation.contact_name}</strong></div>
                   <div><span>WhatsApp</span><strong>{currentReservation.phone}</strong></div>
                   <div><span>E-mail</span><strong>{currentReservation.email || "Não informado"}</strong></div>
+                  <div><span>Cidade do grupo</span><strong>{currentReservation.group_city}/{currentReservation.group_state}</strong></div>
+                  <div className="summary-info-wide"><span>Endereço do grupo</span><strong>{currentReservation.group_address}</strong></div>
                   <div><span>Período</span><strong>{formatRange(currentReservation.start_date, currentReservation.end_date)}</strong></div>
                   <div><span>Pessoas estimadas</span><strong>{currentReservation.guests_estimated}</strong></div>
                   <div><span>Pessoas confirmadas</span><strong>{currentReservation.guests_confirmed ?? "A confirmar"}</strong></div>
@@ -595,6 +606,9 @@ export default function ReservationDetailsPage() {
                 <label className="field"><span className="label">Responsável</span><input className="input" value={draft.contact_name} onChange={(event) => updateDraft("contact_name", event.target.value)} required /></label>
                 <label className="field"><span className="label">WhatsApp</span><input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} required /></label>
                 <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label>
+                <label className="field field-full"><span className="label">Endereço do grupo</span><input className="input" value={draft.group_address} onChange={(event) => updateDraft("group_address", event.target.value)} placeholder="Rua, número e bairro" required /></label>
+                <label className="field"><span className="label">Cidade do grupo</span><input className="input" value={draft.group_city} onChange={(event) => updateDraft("group_city", event.target.value)} required /></label>
+                <label className="field"><span className="label">UF</span><input className="input" maxLength={2} value={draft.group_state} onChange={(event) => updateDraft("group_state", event.target.value.toUpperCase())} required /></label>
                 <label className="field"><span className="label">Cardápio / pacote</span><input className="input" value={draft.package_name} onChange={(event) => updateDraft("package_name", event.target.value)} /></label>
                 <label className="field"><span className="label">Data inicial</span><input className="input" type="date" value={draft.start_date} onChange={(event) => updateDraft("start_date", event.target.value)} required /></label>
                 <label className="field"><span className="label">Data final</span><input className="input" type="date" min={draft.start_date} value={draft.end_date} onChange={(event) => updateDraft("end_date", event.target.value)} required /></label>

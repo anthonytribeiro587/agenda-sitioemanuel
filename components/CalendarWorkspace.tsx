@@ -7,11 +7,11 @@ import { addDays, format, nextFriday } from "date-fns";
 import {
   Ban,
   CalendarCheck2,
-  Check,
   Clock3,
-  ExternalLink,
+  Edit3,
   History,
   Info,
+  MapPin,
   MessageCircle,
   Save,
   Trash2,
@@ -49,6 +49,9 @@ type ReservationForm = {
   contact_name: string;
   phone: string;
   email: string;
+  group_address: string;
+  group_city: string;
+  group_state: string;
   guests_estimated: string;
   package_name: string;
   notes: string;
@@ -66,6 +69,9 @@ function blankForm(settings: AppSettings): ReservationForm {
     contact_name: "",
     phone: "",
     email: "",
+    group_address: "",
+    group_city: "",
+    group_state: "RS",
     guests_estimated: String(settings.default_guests_estimated),
     package_name: settings.default_package_name,
     notes: "",
@@ -118,7 +124,9 @@ export function CalendarWorkspace() {
     createReservationWithPayment,
     updateReservation,
     updateReservationFinancial,
+    deleteReservation,
     addBlockedPeriod,
+    updateBlockedPeriod,
     removeBlockedPeriod,
     refresh,
   } = useAgenda();
@@ -131,6 +139,11 @@ export function CalendarWorkspace() {
   const [mode, setMode] = useState<"reservation" | "block">("reservation");
   const [form, setForm] = useState<ReservationForm>(() => blankForm(settings));
   const [blockReason, setBlockReason] = useState("");
+  const [blockAuditReason, setBlockAuditReason] = useState("");
+  const [statusDraft, setStatusDraft] = useState<ReservationStatus>("PRE_RESERVA");
+  const [statusReason, setStatusReason] = useState("");
+  const [reservationDeleteReason, setReservationDeleteReason] = useState("");
+  const [reservationDeleteOpen, setReservationDeleteOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [confirmedTotal, setConfirmedTotal] = useState("");
   const [financialReason, setFinancialReason] = useState("");
@@ -182,6 +195,9 @@ export function CalendarWorkspace() {
             contact_name: customer.name,
             phone: customer.phone,
             email: customer.email,
+            group_address: customer.address,
+            group_city: customer.city,
+            group_state: customer.state,
           }
         : { ...current, customer_id: "" }
     );
@@ -196,6 +212,8 @@ export function CalendarWorkspace() {
     setSelectedBlockId(null);
     setMode("reservation");
     resetForm();
+    setStatusReason("");
+    setReservationDeleteReason("");
     setMessage("");
     setModalOpen(true);
   }
@@ -214,9 +232,15 @@ export function CalendarWorkspace() {
     setMessage("");
 
     const reservation = reservations.find((item) => item.id === selection.reservationId);
+    const block = blockedPeriods.find((item) => item.id === selection.blockId);
     setConfirmedTotal(reservation?.total_amount ? String(reservation.total_amount) : "");
+    setStatusDraft(reservation?.status ?? "PRE_RESERVA");
+    setStatusReason("");
+    setReservationDeleteReason("");
     setPaymentAmount("");
     setFinancialReason("");
+    setBlockReason(block?.reason ?? "");
+    setBlockAuditReason("");
     if (!reservation && !selection.blockId) resetForm();
     setModalOpen(true);
   }
@@ -243,6 +267,9 @@ export function CalendarWorkspace() {
           organization: form.church_name.trim(),
           phone: form.phone.trim(),
           email: form.email.trim(),
+          address: form.group_address.trim(),
+          city: form.group_city.trim(),
+          state: form.group_state.trim().toUpperCase(),
           notes: "Ficha criada automaticamente a partir da primeira pré-reserva.",
         });
         customerCreated = true;
@@ -257,6 +284,9 @@ export function CalendarWorkspace() {
           contact_name: form.contact_name.trim(),
           phone: form.phone.trim(),
           email: form.email.trim(),
+          group_address: form.group_address.trim(),
+          group_city: form.group_city.trim(),
+          group_state: form.group_state.trim().toUpperCase(),
           start_date: selectedStart,
           end_date: selectedEnd,
           guests_estimated: Number(form.guests_estimated || settings.default_guests_estimated),
@@ -333,14 +363,59 @@ export function CalendarWorkspace() {
     }
   }
 
-  async function confirmReservation() {
-    if (!selectedReservation) return;
+  function statusNeedsReason(nextStatus: ReservationStatus) {
+    if (!selectedReservation || nextStatus === selectedReservation.status) return false;
+    if (nextStatus === "CANCELADA") return true;
+    return role === "ADMIN" && (
+      (selectedReservation.status === "CONFIRMADA" && nextStatus === "PRE_RESERVA") ||
+      (selectedReservation.status === "REALIZADA" && nextStatus !== "REALIZADA") ||
+      (selectedReservation.status === "CANCELADA" && nextStatus !== "CANCELADA")
+    );
+  }
+
+  async function saveStatus(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedReservation || statusDraft === selectedReservation.status) return;
+    if (statusNeedsReason(statusDraft) && statusReason.trim().length < 5) {
+      setMessage("Informe o motivo da alteração com pelo menos 5 caracteres.");
+      return;
+    }
     setSaving(true);
+    setMessage("");
     try {
-      await updateReservation(selectedReservation.id, { status: "CONFIRMADA" });
-      setMessage("Reserva confirmada.");
+      await updateReservation(
+        selectedReservation.id,
+        { status: statusDraft },
+        statusReason.trim() ? { reason: statusReason.trim() } : undefined
+      );
+      setStatusReason("");
+      setMessage("Situação atualizada com sucesso.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível confirmar a reserva.");
+      setMessage(error instanceof Error ? error.message : "Não foi possível alterar a situação.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveBlock(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedBlock) return;
+    if (blockAuditReason.trim().length < 5) {
+      setMessage("Informe o motivo da edição com pelo menos 5 caracteres.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      await updateBlockedPeriod(
+        selectedBlock.id,
+        { start_date: selectedStart, end_date: selectedEnd, reason: blockReason.trim() },
+        blockAuditReason.trim()
+      );
+      setBlockAuditReason("");
+      setMessage("Bloqueio atualizado com sucesso.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível editar o bloqueio.");
     } finally {
       setSaving(false);
     }
@@ -391,6 +466,34 @@ export function CalendarWorkspace() {
     message.includes("removido") ||
     message.includes("histórico") ||
     message.includes("adicionada");
+
+  const availableStatuses = useMemo<ReservationStatus[]>(() => {
+    if (!selectedReservation) return [];
+
+    if (selectedReservation.status === "PRE_RESERVA") {
+      return ["PRE_RESERVA", "CONFIRMADA", "CANCELADA"];
+    }
+    if (selectedReservation.status === "CONFIRMADA") {
+      return role === "ADMIN"
+        ? ["PRE_RESERVA", "CONFIRMADA", "REALIZADA", "CANCELADA"]
+        : ["CONFIRMADA", "REALIZADA", "CANCELADA"];
+    }
+    if (selectedReservation.status === "REALIZADA") {
+      return role === "ADMIN"
+        ? ["CONFIRMADA", "REALIZADA", "CANCELADA"]
+        : ["REALIZADA"];
+    }
+    return role === "ADMIN"
+      ? ["PRE_RESERVA", "CONFIRMADA", "CANCELADA"]
+      : ["CANCELADA"];
+  }, [role, selectedReservation]);
+
+  const statusLabels: Record<ReservationStatus, string> = {
+    PRE_RESERVA: "Pré-reserva",
+    CONFIRMADA: "Confirmada / reservada",
+    REALIZADA: "Realizada",
+    CANCELADA: "Cancelada",
+  };
 
   return (
     <>
@@ -453,22 +556,51 @@ export function CalendarWorkspace() {
                         </div>
 
                         <div className="compact-info-grid">
+                          <div><span>Responsável</span><strong>{selectedReservation.contact_name}</strong></div>
                           <div><span>Contato</span><strong>{selectedReservation.phone}</strong></div>
+                          <div><span>Cidade do grupo</span><strong>{selectedReservation.group_city}/{selectedReservation.group_state}</strong></div>
                           <div><span>Pessoas</span><strong>{selectedReservation.guests_confirmed ?? selectedReservation.guests_estimated}</strong></div>
+                          <div className="compact-info-wide"><span>Endereço do grupo</span><strong>{selectedReservation.group_address}</strong></div>
                           <div><span>Cardápio</span><strong>{selectedReservation.package_name}</strong></div>
                           <div><span>Recebido</span><strong>{formatCurrency(paymentTotal(selectedReservation.payments))}</strong></div>
                         </div>
+
+                        {canManageReservations ? (
+                          <form className="calendar-status-form" onSubmit={saveStatus}>
+                            <div className="mini-section-title">
+                              <CalendarCheck2 />
+                              <div><strong>Alterar situação</strong><span>A mudança fica registrada na auditoria.</span></div>
+                            </div>
+                            <label className="field">
+                              <span className="label">Situação da reserva</span>
+                              <select className="select" value={statusDraft} onChange={(event) => { setStatusDraft(event.target.value as ReservationStatus); setStatusReason(""); }}>
+                                {availableStatuses.map((status) => (
+                                  <option key={status} value={status}>{statusLabels[status]}</option>
+                                ))}
+                              </select>
+                            </label>
+                            {statusNeedsReason(statusDraft) ? (
+                              <label className="field">
+                                <span className="label">Motivo da alteração</span>
+                                <textarea className="textarea compact-textarea" maxLength={500} value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Ex.: evento cancelado pelo responsável" required />
+                              </label>
+                            ) : null}
+                            <button className="button button-primary button-wide" disabled={saving || statusDraft === selectedReservation.status || (statusNeedsReason(statusDraft) && statusReason.trim().length < 5)}>
+                              <Save /> Salvar situação
+                            </button>
+                          </form>
+                        ) : null}
 
                         <div className="side-actions">
                           <a className="button button-secondary" href={whatsappUrl(selectedReservation, settings.whatsapp_template)} target="_blank" rel="noreferrer">
                             <MessageCircle /> WhatsApp
                           </a>
                           <Link className="button button-secondary" href={`/reservas/${selectedReservation.id}`}>
-                            <ExternalLink /> Ver detalhes
+                            <Edit3 /> Editar dados
                           </Link>
-                          {canManageReservations && selectedReservation.status === "PRE_RESERVA" ? (
-                            <button className="button button-primary" type="button" onClick={confirmReservation} disabled={saving}>
-                              <Check /> Confirmar
+                          {role === "ADMIN" ? (
+                            <button className="button button-danger" type="button" onClick={() => { setReservationDeleteReason(""); setReservationDeleteOpen(true); }}>
+                              <Trash2 /> Excluir duplicada
                             </button>
                           ) : null}
                         </div>
@@ -517,16 +649,18 @@ export function CalendarWorkspace() {
                         <Ban />
                       </div>
                       {canManageReservations ? (
-                        <button
-                          className="button button-danger"
-                          type="button"
-                          onClick={() => {
-                            setBlockDeleteReason("");
-                            setBlockDeleteOpen(true);
-                          }}
-                        >
-                          <Trash2 /> Remover bloqueio
-                        </button>
+                        <form className="calendar-reservation-form" onSubmit={saveBlock}>
+                          <div className="calendar-period-fields">
+                            <label className="field"><span className="label">Data inicial</span><input className="input" type="date" value={selectedStart} onChange={(event) => { setSelectedStart(event.target.value); if (selectedEnd < event.target.value) setSelectedEnd(event.target.value); }} required /></label>
+                            <label className="field"><span className="label">Data final</span><input className="input" type="date" min={selectedStart} value={selectedEnd} onChange={(event) => setSelectedEnd(event.target.value)} required /></label>
+                          </div>
+                          <label className="field"><span className="label">Motivo do bloqueio</span><textarea className="textarea compact-textarea" value={blockReason} onChange={(event) => setBlockReason(event.target.value)} required /></label>
+                          <label className="field"><span className="label">Motivo da edição</span><textarea className="textarea compact-textarea" maxLength={500} value={blockAuditReason} onChange={(event) => setBlockAuditReason(event.target.value)} placeholder="Ex.: período de manutenção alterado" required /></label>
+                          <div className="side-actions">
+                            <button className="button button-primary" disabled={saving || blockAuditReason.trim().length < 5}><Save /> Salvar bloqueio</button>
+                            <button className="button button-danger" type="button" onClick={() => { setBlockDeleteReason(""); setBlockDeleteOpen(true); }}><Trash2 /> Remover bloqueio</button>
+                          </div>
+                        </form>
                       ) : null}
                     </div>
                   ) : (
@@ -576,6 +710,9 @@ export function CalendarWorkspace() {
                             <label className="field"><span className="label">Responsável</span><input className="input" value={form.contact_name} onChange={(event) => updateForm("contact_name", event.target.value)} required /></label>
                             <label className="field"><span className="label">WhatsApp</span><input className="input" inputMode="tel" value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} required /></label>
                             <label className="field"><span className="label">E-mail <em>opcional</em></span><input className="input" type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} /></label>
+                            <label className="field field-full"><span className="label"><MapPin /> Endereço do grupo</span><input className="input" value={form.group_address} onChange={(event) => updateForm("group_address", event.target.value)} placeholder="Rua, número e bairro" required /></label>
+                            <label className="field"><span className="label">Cidade do grupo</span><input className="input" value={form.group_city} onChange={(event) => updateForm("group_city", event.target.value)} required /></label>
+                            <label className="field"><span className="label">UF</span><input className="input" maxLength={2} value={form.group_state} onChange={(event) => updateForm("group_state", event.target.value.toUpperCase())} required /></label>
                             <label className="field"><span className="label">Pessoas estimadas</span><input className="input" type="number" min="1" max="500" value={form.guests_estimated} onChange={(event) => updateForm("guests_estimated", event.target.value)} required /></label>
                             <label className="field"><span className="label">Cardápio / pacote</span><input className="input" value={form.package_name} onChange={(event) => updateForm("package_name", event.target.value)} /></label>
                             <label className="field"><span className="label">Situação inicial</span><select className="select" value={form.status} onChange={(event) => updateForm("status", event.target.value as ReservationForm["status"])}><option value="PRE_RESERVA">Pré-reserva</option><option value="CONFIRMADA">Confirmada</option></select></label>
@@ -608,6 +745,35 @@ export function CalendarWorkspace() {
             document.body
           )
         : null}
+
+      <ConfirmDialog
+        open={reservationDeleteOpen && selectedReservation !== null}
+        title="Excluir esta reserva?"
+        description="A exclusão é permitida apenas para pré-reserva duplicada, criada há menos de 24 horas e sem pagamentos. Informe o motivo para a auditoria."
+        confirmLabel="Excluir reserva"
+        tone="danger"
+        busy={saving}
+        confirmDisabled={reservationDeleteReason.trim().length < 5}
+        onCancel={() => { setReservationDeleteOpen(false); setReservationDeleteReason(""); }}
+        onConfirm={async () => {
+          if (!selectedReservation) return;
+          setSaving(true);
+          try {
+            await deleteReservation(selectedReservation.id, reservationDeleteReason.trim());
+            setReservationDeleteOpen(false);
+            setReservationDeleteReason("");
+            setSelectedReservationId(null);
+            setModalOpen(false);
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Não foi possível excluir a reserva.");
+            setReservationDeleteOpen(false);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <label className="field"><span className="label">Motivo da exclusão</span><textarea className="textarea" maxLength={500} value={reservationDeleteReason} onChange={(event) => setReservationDeleteReason(event.target.value)} placeholder="Ex.: cadastro duplicado" autoFocus /></label>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={blockDeleteOpen && selectedBlock !== null}

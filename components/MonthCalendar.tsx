@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   endOfMonth,
@@ -13,7 +13,6 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { formatRange } from "@/lib/format";
 import type { BlockedPeriod, Reservation } from "@/lib/types";
 
 const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -77,6 +76,7 @@ export function MonthCalendar({
   canCreate?: boolean;
 }) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   const weeks = useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
@@ -92,8 +92,30 @@ export function MonthCalendar({
     return rows;
   }, [month]);
 
+  useEffect(() => {
+    const calendar = calendarRef.current;
+    if (!calendar) return;
+
+    const alignWeekend = () => {
+      if (!window.matchMedia("(max-width: 760px)").matches) {
+        calendar.scrollLeft = 0;
+        return;
+      }
+      const maxScroll = Math.max(0, calendar.scrollWidth - calendar.clientWidth);
+      // Abre mostrando quinta a domingo, como no fluxo operacional do sítio.
+      calendar.scrollLeft = maxScroll;
+    };
+
+    const frame = window.requestAnimationFrame(alignWeekend);
+    window.addEventListener("resize", alignWeekend);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", alignWeekend);
+    };
+  }, [month, weeks.length]);
+
   return (
-    <div className="prototype-calendar">
+    <div className="prototype-calendar" ref={calendarRef}>
       <div className="prototype-calendar-toolbar">
         <div className="prototype-calendar-controls">
           <button className="calendar-today-button" type="button" onClick={() => setMonth(startOfMonth(new Date()))}>
@@ -221,7 +243,8 @@ export function MonthCalendar({
                     }
                   >
                     <strong title={reservation.church_name}>{reservation.church_name}</strong>
-                    <span>{formatRange(reservation.start_date, reservation.end_date)}</span>
+                    <span className="booking-responsible">Resp.: {reservation.contact_name}</span>
+                    <span className="booking-city">{reservation.group_city}/{reservation.group_state}</span>
                   </button>
                 );
               })}

@@ -13,6 +13,9 @@ export type Customer = {
   organization: string;
   phone: string;
   email: string;
+  address: string;
+  city: string;
+  state: string;
   notes: string;
   created_at: string;
   updated_at?: string;
@@ -40,6 +43,9 @@ export type Reservation = {
   contact_name: string;
   phone: string;
   email: string;
+  group_address: string;
+  group_city: string;
+  group_state: string;
   start_date: string;
   end_date: string;
   guests_estimated: number;
