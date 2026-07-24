@@ -21,6 +21,11 @@ export type AppSettings = {
   default_payment_method: PaymentMethod;
   default_deposit_note: string;
   whatsapp_template: string;
+  contract_template_path: string | null;
+  contract_template_name: string | null;
+  contract_template_mime: string | null;
+  contract_template_size: number | null;
+  contract_template_updated_at: string | null;
   updated_at?: string;
 };
 
@@ -32,7 +37,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   default_deposit_note: "Sinal da reserva",
   whatsapp_template:
     "Olá, {responsavel}! Sobre a reserva de {periodo} no Sítio Emanuel para {igreja}. Qualquer dúvida, estamos à disposição.",
+  contract_template_path: null,
+  contract_template_name: null,
+  contract_template_mime: null,
+  contract_template_size: null,
+  contract_template_updated_at: null,
 };
+
+const nullableShortText = z.string().trim().max(500).nullable();
 
 const settingsSchema = z.object({
   default_package_name: z.string().trim().min(1).max(120),
@@ -41,6 +53,12 @@ const settingsSchema = z.object({
   default_payment_method: z.enum(["PIX", "DINHEIRO", "CARTAO", "TRANSFERENCIA", "OUTRO"]),
   default_deposit_note: z.string().trim().min(1).max(500),
   whatsapp_template: z.string().trim().min(10).max(1200),
+  contract_template_path: nullableShortText,
+  contract_template_name: z.string().trim().max(180).nullable(),
+  contract_template_mime: z.string().trim().max(120).nullable(),
+  contract_template_size: z.coerce.number().int().nonnegative().nullable(),
+  contract_template_updated_at: nullableShortText,
+  updated_at: z.string().optional(),
 });
 
 type SettingsContextValue = {
@@ -49,6 +67,7 @@ type SettingsContextValue = {
   saving: boolean;
   error: string;
   updateSettings: (next: AppSettings) => Promise<void>;
+  reloadSettings: () => Promise<void>;
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -67,40 +86,34 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const reloadSettings = useCallback(async () => {
     if (!role) return;
 
-    let active = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        if (isDemo) {
-          const raw = window.localStorage.getItem(DEMO_STORAGE_KEY);
-          if (active) setSettings(normalizeSettings(raw ? JSON.parse(raw) : null));
-          return;
-        }
-        if (!supabase) throw new Error("Banco indisponível.");
-        const { data, error: rpcError } = await supabase.rpc("get_app_settings_secure");
-        if (rpcError) throw new Error(rpcError.message);
-        const row = Array.isArray(data) ? data[0] : data;
-        if (active) setSettings(normalizeSettings(row as Partial<AppSettings>));
-      } catch (loadError) {
-        console.error("settings load failed", loadError);
-        if (active) {
-          setSettings(DEFAULT_SETTINGS);
-          setError("As parametrizações ainda não foram ativadas no banco.");
-        }
-      } finally {
-        if (active) setLoading(false);
+    setLoading(true);
+    setError("");
+    try {
+      if (isDemo) {
+        const raw = window.localStorage.getItem(DEMO_STORAGE_KEY);
+        setSettings(normalizeSettings(raw ? JSON.parse(raw) : null));
+        return;
       }
+      if (!supabase) throw new Error("Banco indisponível.");
+      const { data, error: rpcError } = await supabase.rpc("get_app_settings_secure");
+      if (rpcError) throw new Error(rpcError.message);
+      const row = Array.isArray(data) ? data[0] : data;
+      setSettings(normalizeSettings(row as Partial<AppSettings>));
+    } catch (loadError) {
+      console.error("settings load failed", loadError);
+      setSettings(DEFAULT_SETTINGS);
+      setError("As parametrizações ainda não foram ativadas no banco.");
+    } finally {
+      setLoading(false);
     }
-
-    void load();
-    return () => {
-      active = false;
-    };
   }, [isDemo, role, supabase]);
+
+  useEffect(() => {
+    void reloadSettings();
+  }, [reloadSettings]);
 
   const updateSettings = useCallback(
     async (next: AppSettings) => {
@@ -139,8 +152,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ settings, loading, saving, error, updateSettings }),
-    [error, loading, saving, settings, updateSettings]
+    () => ({ settings, loading, saving, error, updateSettings, reloadSettings }),
+    [error, loading, reloadSettings, saving, settings, updateSettings]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
