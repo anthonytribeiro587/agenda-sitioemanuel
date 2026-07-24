@@ -20,6 +20,10 @@ export default function LoginPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+
+    // Impede cliques repetidos de dispararem autenticações concorrentes.
+    if (loading) return;
+
     if (demo) {
       router.replace("/dashboard");
       return;
@@ -38,35 +42,45 @@ export default function LoginPage() {
 
     setLoading(true);
     setError("");
-    const normalizedEmail = email.trim().toLowerCase().slice(0, 254);
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password: password.slice(0, 256),
-    });
 
-    if (authError) {
+    try {
+      const normalizedEmail = email.trim().toLowerCase().slice(0, 254);
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: password.slice(0, 256),
+      });
+
+      if (authError) {
+        setPassword("");
+        setError("Não foi possível entrar. Confira os dados e tente novamente.");
+        return;
+      }
+
+      const bootstrapResponse = await fetch("/api/profile/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+
+      if (!bootstrapResponse.ok) {
+        const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null;
+        await supabase.auth.signOut();
+        setPassword("");
+        setError(body?.error ?? "Seu usuário não está autorizado.");
+        return;
+      }
+
+      router.replace("/dashboard");
+      router.refresh();
+    } catch {
+      // Falhas de rede não devem deixar uma sessão parcial ou a senha exposta na tela.
+      await supabase.auth.signOut().catch(() => undefined);
+      setPassword("");
+      setError("Não foi possível entrar agora. Tente novamente em instantes.");
+    } finally {
       setLoading(false);
-      setError("Não foi possível entrar. Confira os dados e tente novamente.");
-      return;
     }
-
-    const bootstrapResponse = await fetch("/api/profile/bootstrap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-    });
-
-    if (!bootstrapResponse.ok) {
-      const body = (await bootstrapResponse.json().catch(() => null)) as { error?: string } | null;
-      await supabase.auth.signOut();
-      setLoading(false);
-      setError(body?.error ?? "Seu usuário não está autorizado.");
-      return;
-    }
-
-    setLoading(false);
-    router.replace("/dashboard");
-    router.refresh();
   }
 
   return (
@@ -74,9 +88,13 @@ export default function LoginPage() {
       <div className="login-card">
         <section className="login-visual">
           <div>
-            <div className="brand login-brand">
-              <div className="brand-mark">SE</div>
-              <div><h1 className="login-brand-title">Sítio Emanuel</h1><p>Agenda interna</p></div>
+            <div className="login-brand-logo-wrap">
+              <span
+                className="sitio-brand-logo login-sitio-brand-logo"
+                role="img"
+                aria-label="Sítio Emanuel"
+              />
+              <span className="brand-caption login-brand-caption">Agenda interna</span>
             </div>
             <div className="login-hero-copy">
               <h1>Reservas organizadas. Rotina tranquila.</h1>
@@ -93,11 +111,45 @@ export default function LoginPage() {
           <div className="login-lock-icon" aria-hidden="true"><LockKeyhole size={22} /></div>
           <h2>Acesso administrativo</h2>
           <p>Entre com o usuário autorizado para gerenciar a agenda do Sítio Emanuel.</p>
-          {error ? <div className="error-box login-error" role="alert" aria-live="polite">{error}</div> : null}
-          <form onSubmit={submit} className="form-grid login-single-column-form">
-            <label className="field"><span className="label">E-mail</span><input className="input" type="email" value={email} onChange={(e)=>setEmail(e.target.value.slice(0, 254))} required={!demo} autoComplete="username" inputMode="email" maxLength={254} placeholder="seuemail@exemplo.com" /></label>
-            <label className="field"><span className="label">Senha</span><input className="input" type="password" value={password} onChange={(e)=>setPassword(e.target.value.slice(0, 256))} required={!demo} autoComplete="current-password" maxLength={256} placeholder="••••••••" /></label>
-            <button className="button button-primary" type="submit" disabled={loading}>{loading ? "Entrando..." : demo ? "Entrar na demonstração" : "Entrar"}</button>
+          {error ? <div id="login-error" className="error-box login-error" role="alert" aria-live="polite">{error}</div> : null}
+          <form onSubmit={submit} className="form-grid login-single-column-form" aria-busy={loading}>
+            <label className="field">
+              <span className="label">E-mail</span>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value.slice(0, 254))}
+                required={!demo}
+                disabled={loading}
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
+                maxLength={254}
+                aria-describedby={error ? "login-error" : undefined}
+                placeholder="seuemail@exemplo.com"
+              />
+            </label>
+            <label className="field">
+              <span className="label">Senha</span>
+              <input
+                className="input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value.slice(0, 256))}
+                required={!demo}
+                disabled={loading}
+                autoComplete="current-password"
+                maxLength={256}
+                aria-describedby={error ? "login-error" : undefined}
+                placeholder="••••••••"
+              />
+            </label>
+            <button className="button button-primary" type="submit" disabled={loading}>
+              {loading ? "Entrando..." : demo ? "Entrar na demonstração" : "Entrar"}
+            </button>
           </form>
           {demo ? <div className="demo-box"><strong>Modo de demonstração ativo.</strong><br/>Os dados ficam apenas neste navegador até o Supabase ser conectado.</div> : null}
         </section>
